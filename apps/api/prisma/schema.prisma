@@ -1,0 +1,212 @@
+// Prisma Schema for Online Judge Platform
+// Using SQLite for development, will switch to PostgreSQL for production
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// USER
+// ============================================
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  username     String   @unique
+  displayName  String
+  passwordHash String
+  role         String   @default("USER") // USER | ADMIN
+  rating       Int      @default(1200)
+  avatarUrl    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  submissions          Submission[]
+  contestParticipants  ContestParticipant[]
+  comments             Comment[]
+
+  @@map("users")
+}
+
+// ============================================
+// PROBLEM
+// ============================================
+
+model Problem {
+  id           String   @id @default(cuid())
+  title        String
+  slug         String   @unique
+  description  String
+  difficulty   String   @default("MEDIUM") // EASY | MEDIUM | HARD
+  timeLimit    Int      @default(2000) // milliseconds
+  memoryLimit  Int      @default(256) // MB
+  inputFormat  String   @default("")
+  outputFormat String   @default("")
+  constraints  String   @default("")
+  sampleInput  String   @default("")
+  sampleOutput String   @default("")
+  isPublished  Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  testCases        TestCase[]
+  submissions      Submission[]
+  tags             ProblemTag[]
+  contestProblems  ContestProblem[]
+  comments         Comment[]
+
+  @@map("problems")
+}
+
+// ============================================
+// TAG (many-to-many with Problem)
+// ============================================
+
+model Tag {
+  id       String       @id @default(cuid())
+  name     String       @unique
+  slug     String       @unique
+  problems ProblemTag[]
+
+  @@map("tags")
+}
+
+model ProblemTag {
+  problemId String
+  tagId     String
+  problem   Problem @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  tag       Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([problemId, tagId])
+  @@map("problem_tags")
+}
+
+// ============================================
+// TEST CASE
+// ============================================
+
+model TestCase {
+  id             String  @id @default(cuid())
+  problemId      String
+  input          String
+  expectedOutput String
+  isSample       Boolean @default(false)
+  order          Int     @default(0)
+
+  problem Problem @relation(fields: [problemId], references: [id], onDelete: Cascade)
+
+  @@map("test_cases")
+}
+
+// ============================================
+// SUBMISSION
+// ============================================
+
+model Submission {
+  id              String   @id @default(cuid())
+  userId          String
+  problemId       String
+  language        String   // CPP | PYTHON | JAVA
+  code            String
+  verdict         String   @default("PENDING") // PENDING | RUNNING | ACCEPTED | WRONG_ANSWER | TLE | MLE | RE | CE
+  runtime         Int?     // milliseconds
+  memory          Int?     // KB
+  testCasesPassed Int      @default(0)
+  totalTestCases  Int      @default(0)
+  errorMessage    String?
+  createdAt       DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id])
+  problem Problem @relation(fields: [problemId], references: [id])
+
+  contestSubmission ContestSubmission?
+
+  @@map("submissions")
+}
+
+// ============================================
+// CONTEST
+// ============================================
+
+model Contest {
+  id          String   @id @default(cuid())
+  title       String
+  slug        String   @unique
+  description String   @default("")
+  startTime   DateTime
+  endTime     DateTime
+  createdAt   DateTime @default(now())
+
+  problems     ContestProblem[]
+  participants ContestParticipant[]
+  submissions  ContestSubmission[]
+
+  @@map("contests")
+}
+
+model ContestProblem {
+  contestId String
+  problemId String
+  order     Int    @default(0)
+  points    Int    @default(100)
+
+  contest Contest @relation(fields: [contestId], references: [id], onDelete: Cascade)
+  problem Problem @relation(fields: [problemId], references: [id], onDelete: Cascade)
+
+  @@id([contestId, problemId])
+  @@map("contest_problems")
+}
+
+model ContestParticipant {
+  contestId String
+  userId    String
+  score     Int      @default(0)
+  penalty   Int      @default(0)
+  rank      Int?
+  joinedAt  DateTime @default(now())
+
+  contest Contest @relation(fields: [contestId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@id([contestId, userId])
+  @@map("contest_participants")
+}
+
+model ContestSubmission {
+  id           String @id @default(cuid())
+  contestId    String
+  submissionId String @unique
+
+  contest    Contest    @relation(fields: [contestId], references: [id], onDelete: Cascade)
+  submission Submission @relation(fields: [submissionId], references: [id])
+
+  @@map("contest_submissions")
+}
+
+// ============================================
+// COMMUNITY
+// ============================================
+
+model Comment {
+  id        String   @id @default(cuid())
+  content   String
+  userId    String
+  problemId String
+  parentId  String?
+  upvotes   Int      @default(0)
+  downvotes Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id])
+  problem  Problem   @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  parent   Comment?  @relation("CommentReplies", fields: [parentId], references: [id])
+  replies  Comment[] @relation("CommentReplies")
+
+  @@map("comments")
+}
