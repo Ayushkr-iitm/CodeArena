@@ -15,9 +15,11 @@ import {
   RefreshCw,
   AlertCircle,
   FileText,
+  Zap,
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { useAuth } from '@/context/AuthContext'
+import { subscribeToContest } from '@/lib/socket'
 
 interface ContestDetail {
   id: string
@@ -98,8 +100,18 @@ export default function ContestDetailPage({ params }: { params: { slug: string }
     loadLeaderboard()
 
     const ticker = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(ticker)
-  }, [loadContest, loadLeaderboard])
+
+    // Real-Time Contest Leaderboard WebSocket Sync
+    const unsubscribe = subscribeToContest(params.slug, () => {
+      console.log('[Contest] Received real-time leaderboard update via WebSocket')
+      loadLeaderboard()
+    })
+
+    return () => {
+      clearInterval(ticker)
+      unsubscribe()
+    }
+  }, [loadContest, loadLeaderboard, params.slug])
 
   const handleRegister = async () => {
     if (!isAuthenticated) {
@@ -350,10 +362,16 @@ export default function ContestDetailPage({ params }: { params: { slug: string }
       {/* Tab 2: Live Leaderboard / Standings */}
       {activeTab === 'standings' && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between text-xs font-mono text-zinc-400">
-            <span>
-              ICPC Scoring: Points accumulated with time penalty (+20 min per rejected attempt)
-            </span>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs font-mono text-zinc-400">
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px] font-semibold">
+                <Zap className="w-3 h-3 text-emerald-400 animate-pulse" />
+                <span>Live Socket Standings</span>
+              </span>
+              <span className="hidden md:inline text-zinc-500">
+                • ICPC Scoring: Points accumulated + 20m per penalty
+              </span>
+            </div>
             <button
               onClick={loadLeaderboard}
               disabled={loadingLeaderboard}

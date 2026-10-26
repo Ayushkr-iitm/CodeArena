@@ -64,12 +64,16 @@ app.use("/api/contests", contestRouter);
 
 app.use(errorHandler);
 
-// ============================================
-// START SERVER
-// ============================================
+import http from "http";
+import { initSocket } from "./socket";
 
-app.listen(PORT, () => {
-  console.log(`\n🚀 API server running at http://localhost:${PORT}`);
+const httpServer = http.createServer(app);
+
+// Initialize WebSockets
+initSocket(httpServer);
+
+httpServer.listen(PORT, () => {
+  console.log(`\n🚀 API & WebSocket server running at http://localhost:${PORT}`);
   console.log(`📋 Health check: http://localhost:${PORT}/api/health\n`);
 });
 

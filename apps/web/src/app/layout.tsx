@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'
 import Navbar from '@/components/Navbar'
+import LiveActivityToast from '@/components/LiveActivityToast'
 import { AuthProvider } from '@/context/AuthContext'
 
 const inter = Inter({ subsets: ['latin'] })
@@ -24,6 +25,7 @@ export default function RootLayout({
           <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
             {children}
           </main>
+          <LiveActivityToast />
         </AuthProvider>
       </body>
     </html>

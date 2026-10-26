@@ -18,6 +18,7 @@ import {
   Star
 } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
+import OnlineUsersBadge from '@/components/OnlineUsersBadge'
 
 export default function Navbar() {
   const [isOpen, setIsOpen] = useState(false)
@@ -97,8 +98,11 @@ export default function Navbar() {
             </div>
           </div>
 
-          {/* Right Section: Search & Dynamic Auth Status */}
+          {/* Right Section: Online Users & Search & Dynamic Auth Status */}
           <div className="hidden md:flex items-center gap-4">
+            {/* Live WebSocket Online Counter */}
+            <OnlineUsersBadge />
+
             {/* Quick Search */}
             <Link
               href="/problems"

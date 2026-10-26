@@ -1,6 +1,7 @@
 import prisma from "../lib/prisma";
 import { evaluateSuite } from "../judge";
 import { SubmissionJobData, SubmissionJobResult } from "./types";
+import { emitSubmissionStatus, emitContestUpdate, broadcastActivity } from "../socket";
 
 /**
  * Core submission processor executed by queue workers.
@@ -12,11 +13,12 @@ export async function processSubmissionJob(
 
   console.log(`[Worker] Starting evaluation for submission: ${submissionId} (Problem: ${problemId})`);
 
-  // 1. Mark submission as RUNNING in DB
+  // 1. Mark submission as RUNNING in DB and emit to socket clients
   await prisma.submission.update({
     where: { id: submissionId },
     data: { verdict: "RUNNING" },
   });
+  emitSubmissionStatus(submissionId, { verdict: "RUNNING" });
 
   // 2. Fetch problem details and all test cases
   const problem = await prisma.problem.findUnique({
@@ -84,6 +86,56 @@ export async function processSubmissionJob(
   console.log(
     `[Worker] Finished evaluation for submission ${submissionId}: ${evalResult.verdict} (${evalResult.testCasesPassed}/${evalResult.totalTestCases} passed)`
   );
+
+  // 6. Broadcast real-time verdict to the client
+  emitSubmissionStatus(submissionId, {
+    verdict: evalResult.verdict,
+    testCasesPassed: evalResult.testCasesPassed,
+    totalTestCases: evalResult.totalTestCases,
+    runtime: evalResult.maxRuntimeMs,
+    memory: evalResult.peakMemoryKb,
+    errorMessage: updatedSubmission.errorMessage,
+    ratingBonus,
+    testCaseResults: evalResult.testCaseResults,
+  });
+
+  // 7. If this submission belongs to a contest, broadcast live leaderboard update
+  try {
+    const contestSub = await prisma.contestSubmission.findUnique({
+      where: { submissionId },
+      include: { contest: true },
+    });
+    if (contestSub) {
+      emitContestUpdate(contestSub.contest.slug, {
+        contestId: contestSub.contestId,
+        submissionId,
+        userId,
+        problemId,
+        verdict: evalResult.verdict,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  } catch (err) {
+    console.error(`[Worker] Error broadcasting contest update:`, err);
+  }
+
+  // 8. Global activity feed if accepted
+  if (evalResult.verdict === "ACCEPTED") {
+    try {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { username: true },
+      });
+      broadcastActivity({
+        username: user?.username || "A coder",
+        problemTitle: problem.title,
+        verdict: "ACCEPTED",
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      // Non-critical
+    }
+  }
 
   return {
     submissionId,

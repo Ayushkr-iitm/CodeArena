@@ -19,10 +19,12 @@ import {
   Award,
   Settings2,
   Type,
-  SunMoon
+  SunMoon,
+  Zap
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { useAuth } from '@/context/AuthContext'
+import { subscribeToSubmission } from '@/lib/socket'
 import CodeEditor, { SupportedLanguage } from '@/components/CodeEditor'
 
 interface ProblemDetail {
@@ -286,26 +288,82 @@ export default function ProblemDetailPage({ params }: { params: { slug: string }
         throw new Error('No submission ID returned from queue')
       }
 
-      // Poll submission status until worker finishes
-      const maxAttempts = 40 // 40 * 500ms = 20s max polling
+      // 1. Instant Real-Time WebSocket Channel
+      let isCompleted = false
+      const unsubscribeSocket = subscribeToSubmission(submissionId, (update: any) => {
+        if (isCompleted) return
+
+        if (update.verdict === 'RUNNING') {
+          setTestResult((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  status: 'Evaluating in Sandbox (Live Socket)...',
+                  output: 'Worker executing test cases in isolated sandbox...',
+                }
+              : null
+          )
+        } else if (update.verdict && update.verdict !== 'PENDING') {
+          isCompleted = true
+          clearInterval(pollInterval)
+          unsubscribeSocket()
+          setIsRunning(false)
+
+          const isAccepted = update.verdict === 'ACCEPTED'
+          const statusText = isAccepted
+            ? `Accepted (${update.testCasesPassed}/${update.totalTestCases} Test Cases Passed)`
+            : `${update.verdict.replace(/_/g, ' ')} (${update.testCasesPassed}/${update.totalTestCases} Passed)`
+
+          setTestResult({
+            status: statusText,
+            runtime: `${update.runtime ?? 0} ms`,
+            memory: `${((update.memory ?? 0) / 1024).toFixed(1)} MB`,
+            output: isAccepted
+              ? 'All evaluation test cases passed successfully.'
+              : update.errorMessage || 'One or more test cases failed.',
+            error: isAccepted ? undefined : update.errorMessage,
+            isSuccess: isAccepted,
+          })
+
+          loadSubmissions()
+        }
+      })
+
+      // 2. Fallback Polling (in case WebSocket connection dropped)
+      const maxAttempts = 40
       let attempts = 0
-      
+
       const pollInterval = setInterval(async () => {
+        if (isCompleted) {
+          clearInterval(pollInterval)
+          return
+        }
+
         attempts++
         try {
           const statusRes = await api.getSubmissionStatus(submissionId)
           const sub = statusRes?.data || statusRes
 
-          if (sub.verdict === 'RUNNING') {
-            setTestResult((prev) => prev ? {
-              ...prev,
-              status: 'Evaluating in Sandbox...',
-              output: `Worker executing test cases in isolated sandbox...`,
-            } : null)
+          if (sub.verdict === 'RUNNING' && !isCompleted) {
+            setTestResult((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    status: 'Evaluating in Sandbox...',
+                    output: `Worker executing test cases in isolated sandbox...`,
+                  }
+                : null
+            )
           }
 
-          if (sub.isFinished || (sub.verdict !== 'PENDING' && sub.verdict !== 'RUNNING') || attempts >= maxAttempts) {
+          if (
+            sub.isFinished ||
+            (sub.verdict !== 'PENDING' && sub.verdict !== 'RUNNING') ||
+            attempts >= maxAttempts
+          ) {
+            isCompleted = true
             clearInterval(pollInterval)
+            unsubscribeSocket()
             setIsRunning(false)
 
             const isAccepted = sub.verdict === 'ACCEPTED'
@@ -319,7 +377,7 @@ export default function ProblemDetailPage({ params }: { params: { slug: string }
               memory: `${((sub.memory ?? 0) / 1024).toFixed(1)} MB`,
               output: isAccepted
                 ? 'All evaluation test cases passed successfully.'
-                : (sub.errorMessage || 'One or more test cases failed.'),
+                : sub.errorMessage || 'One or more test cases failed.',
               error: isAccepted ? undefined : sub.errorMessage,
               isSuccess: isAccepted,
             })
@@ -327,9 +385,12 @@ export default function ProblemDetailPage({ params }: { params: { slug: string }
             loadSubmissions()
           }
         } catch (pollErr: any) {
-          clearInterval(pollInterval)
-          setIsRunning(false)
-          console.error('Polling error:', pollErr)
+          if (!isCompleted) {
+            clearInterval(pollInterval)
+            unsubscribeSocket()
+            setIsRunning(false)
+            console.error('Polling error:', pollErr)
+          }
         }
       }, 500)
     } catch (err: any) {
