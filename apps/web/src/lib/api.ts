@@ -94,6 +94,32 @@ export const api = {
 
   getProblem: (slug: string) => apiFetch<any>(`/problems/${slug}`),
 
+  getAllTags: () => apiFetch<any[]>('/problems/tags/all'),
+
+  getAdminProblems: () => apiFetch<any[]>('/problems/admin/all'),
+
+  createProblem: (data: any) =>
+    apiFetch<any>('/problems', {
+      method: 'POST',
+      data,
+    }),
+
+  updateProblem: (id: string, data: any) =>
+    apiFetch<any>(`/problems/${id}`, {
+      method: 'PUT',
+      data,
+    }),
+
+  deleteProblem: (id: string) =>
+    apiFetch<any>(`/problems/${id}`, {
+      method: 'DELETE',
+    }),
+
+  togglePublish: (id: string) =>
+    apiFetch<any>(`/problems/${id}/toggle-publish`, {
+      method: 'PATCH',
+    }),
+
   // Submissions
   submitCode: (problemId: string, code: string, language: string) =>
     apiFetch<any>('/submissions', {

@@ -15,7 +15,49 @@ function generateSlug(title: string): string {
 }
 
 // ============================================
-// GET /api/problems - List problems with filters
+// GET /api/problems/tags/all - List all tags
+// ============================================
+problemRouter.get("/tags/all", async (_req, res, next) => {
+  try {
+    const tags = await prisma.tag.findMany({
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, slug: true },
+    });
+    res.json({ success: true, data: tags });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ============================================
+// GET /api/problems/admin/all - Admin problem list
+// ============================================
+problemRouter.get("/admin/all", authenticate, requireAdmin, async (_req: AuthRequest, res, next) => {
+  try {
+    const problems = await prisma.problem.findMany({
+      orderBy: { createdAt: "desc" },
+      include: {
+        tags: { include: { tag: { select: { id: true, name: true, slug: true } } } },
+        _count: { select: { testCases: true, submissions: true } },
+      },
+    });
+
+    res.json({
+      success: true,
+      data: problems.map((p) => ({
+        ...p,
+        tags: p.tags.map((t) => t.tag),
+        totalTestCases: p._count.testCases,
+        submissionCount: p._count.submissions,
+      })),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ============================================
+// GET /api/problems - List published problems
 // ============================================
 problemRouter.get("/", async (req, res, next) => {
   try {
@@ -27,13 +69,13 @@ problemRouter.get("/", async (req, res, next) => {
 
     const where: any = { isPublished: true };
 
-    if (difficulty) where.difficulty = difficulty;
-    if (tag) where.tags = { some: { tag: { slug: tag } } };
+    if (difficulty && difficulty !== "ALL") where.difficulty = difficulty.toUpperCase();
+    if (tag && tag !== "All Topics") where.tags = { some: { tag: { name: tag } } };
     if (search) {
       where.title = { contains: search };
     }
 
-    const [problems, total] = await Promise.all([
+    const [problems, total, countsByDifficulty] = await Promise.all([
       prisma.problem.findMany({
         where,
         skip: (page - 1) * pageSize,
@@ -49,7 +91,19 @@ problemRouter.get("/", async (req, res, next) => {
         orderBy: { createdAt: "desc" },
       }),
       prisma.problem.count({ where }),
+      prisma.problem.groupBy({
+        by: ["difficulty"],
+        where: { isPublished: true },
+        _count: true,
+      }),
     ]);
+
+    const stats = {
+      total: total,
+      easy: countsByDifficulty.find((c) => c.difficulty === "EASY")?._count || 0,
+      medium: countsByDifficulty.find((c) => c.difficulty === "MEDIUM")?._count || 0,
+      hard: countsByDifficulty.find((c) => c.difficulty === "HARD")?._count || 0,
+    };
 
     res.json({
       success: true,
@@ -59,6 +113,7 @@ problemRouter.get("/", async (req, res, next) => {
           tags: p.tags.map((t) => t.tag),
           submissionCount: p._count.submissions,
         })),
+        stats,
         total,
         page,
         pageSize,
@@ -80,15 +135,14 @@ problemRouter.get("/:slug", async (req, res, next) => {
       include: {
         tags: { include: { tag: { select: { id: true, name: true, slug: true } } } },
         testCases: {
-          where: { isSample: true },
           orderBy: { order: "asc" },
-          select: { id: true, input: true, expectedOutput: true, order: true },
+          select: { id: true, input: true, expectedOutput: true, isSample: true, order: true },
         },
         _count: { select: { submissions: true, testCases: true } },
       },
     });
 
-    if (!problem || !problem.isPublished) {
+    if (!problem) {
       throw new AppError("Problem not found", 404);
     }
 
@@ -97,6 +151,7 @@ problemRouter.get("/:slug", async (req, res, next) => {
       data: {
         ...problem,
         tags: problem.tags.map((t) => t.tag),
+        sampleTestCases: problem.testCases.filter((tc) => tc.isSample),
         totalTestCases: problem._count.testCases,
         submissionCount: problem._count.submissions,
       },
@@ -120,7 +175,7 @@ const createProblemSchema = z.object({
   constraints: z.string().optional().default(""),
   sampleInput: z.string().optional().default(""),
   sampleOutput: z.string().optional().default(""),
-  isPublished: z.boolean().optional().default(false),
+  isPublished: z.boolean().optional().default(true),
   tags: z.array(z.string()).optional(),
   testCases: z
     .array(
@@ -139,10 +194,9 @@ problemRouter.post("/", authenticate, requireAdmin, async (req: AuthRequest, res
     const data = createProblemSchema.parse(req.body);
     const slug = generateSlug(data.title);
 
-    // Check slug uniqueness
     const existing = await prisma.problem.findUnique({ where: { slug } });
     if (existing) {
-      throw new AppError("A problem with a similar title already exists", 409);
+      throw new AppError("A problem with this title already exists", 409);
     }
 
     const problem = await prisma.problem.create({
@@ -159,7 +213,7 @@ problemRouter.post("/", authenticate, requireAdmin, async (req: AuthRequest, res
         sampleInput: data.sampleInput,
         sampleOutput: data.sampleOutput,
         isPublished: data.isPublished,
-        tags: data.tags
+        tags: data.tags && data.tags.length > 0
           ? {
               create: data.tags.map((tagName) => ({
                 tag: {
@@ -174,7 +228,7 @@ problemRouter.post("/", authenticate, requireAdmin, async (req: AuthRequest, res
               })),
             }
           : undefined,
-        testCases: data.testCases
+        testCases: data.testCases && data.testCases.length > 0
           ? { create: data.testCases }
           : undefined,
       },
@@ -185,6 +239,25 @@ problemRouter.post("/", authenticate, requireAdmin, async (req: AuthRequest, res
     });
 
     res.status(201).json({ success: true, data: problem });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ============================================
+// PATCH /api/problems/:id/toggle-publish (Admin)
+// ============================================
+problemRouter.patch("/:id/toggle-publish", authenticate, requireAdmin, async (req: AuthRequest, res, next) => {
+  try {
+    const problem = await prisma.problem.findUnique({ where: { id: req.params.id } });
+    if (!problem) throw new AppError("Problem not found", 404);
+
+    const updated = await prisma.problem.update({
+      where: { id: req.params.id },
+      data: { isPublished: !problem.isPublished },
+    });
+
+    res.json({ success: true, data: updated });
   } catch (error) {
     next(error);
   }
@@ -217,7 +290,7 @@ problemRouter.put("/:id", authenticate, requireAdmin, async (req: AuthRequest, r
 problemRouter.delete("/:id", authenticate, requireAdmin, async (req: AuthRequest, res, next) => {
   try {
     await prisma.problem.delete({ where: { id: req.params.id } });
-    res.json({ success: true, message: "Problem deleted" });
+    res.json({ success: true, message: "Problem deleted successfully" });
   } catch (error) {
     next(error);
   }
