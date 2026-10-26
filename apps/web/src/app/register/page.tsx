@@ -1,12 +1,14 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Code2, Mail, Lock, User, ArrowRight, AlertCircle, CheckCircle2, ShieldCheck } from 'lucide-react'
+import { Code2, Mail, Lock, User, ArrowRight, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { useAuth } from '@/context/AuthContext'
 
 export default function RegisterPage() {
   const router = useRouter()
+  const { register, isAuthenticated } = useAuth()
   const [formData, setFormData] = useState({
     username: '',
     displayName: '',
@@ -17,6 +19,13 @@ export default function RegisterPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (isAuthenticated) {
+      router.push('/problems')
+    }
+  }, [isAuthenticated, router])
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value })
@@ -34,32 +43,17 @@ export default function RegisterPage() {
     }
 
     try {
-      const res = await fetch('http://localhost:4000/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: formData.username,
-          displayName: formData.displayName || formData.username,
-          email: formData.email,
-          password: formData.password,
-        }),
+      await register({
+        username: formData.username,
+        displayName: formData.displayName || formData.username,
+        email: formData.email,
+        password: formData.password,
       })
-
-      const data = await res.json()
-
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Registration failed')
-      }
-
-      // Save tokens
-      localStorage.setItem('accessToken', data.data.accessToken)
-      localStorage.setItem('refreshToken', data.data.refreshToken)
-      localStorage.setItem('user', JSON.stringify(data.data.user))
 
       setSuccess(true)
       setTimeout(() => {
         router.push('/problems')
-      }, 1000)
+      }, 800)
     } catch (err: any) {
       setError(err.message || 'An error occurred during registration')
     } finally {
@@ -123,6 +117,23 @@ export default function RegisterPage() {
                 required
                 className="w-full pl-10 pr-4 py-2.5 bg-surface-300 border border-white/[0.08] rounded-xl text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-brand-500 font-mono"
                 placeholder="algo_master"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-mono font-medium text-zinc-300 mb-1.5">
+              DISPLAY NAME (OPTIONAL)
+            </label>
+            <div className="relative">
+              <User className="w-4 h-4 text-zinc-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                name="displayName"
+                value={formData.displayName}
+                onChange={handleChange}
+                className="w-full pl-10 pr-4 py-2.5 bg-surface-300 border border-white/[0.08] rounded-xl text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-brand-500 font-mono"
+                placeholder="Ayush Srivastava"
               />
             </div>
           </div>

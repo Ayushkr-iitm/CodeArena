@@ -4,13 +4,32 @@ interface RequestOptions extends RequestInit {
   data?: any
 }
 
-async function apiFetch<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
+// Token storage helpers
+export const tokenStorage = {
+  getAccessToken: () => (typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null),
+  getRefreshToken: () => (typeof window !== 'undefined' ? localStorage.getItem('refreshToken') : null),
+  setTokens: (accessToken: string, refreshToken: string) => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('accessToken', accessToken)
+      localStorage.setItem('refreshToken', refreshToken)
+    }
+  },
+  clearTokens: () => {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('accessToken')
+      localStorage.removeItem('refreshToken')
+      localStorage.removeItem('user')
+    }
+  },
+}
+
+export async function apiFetch<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
   const { data, headers, ...customConfig } = options
 
-  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+  const token = tokenStorage.getAccessToken()
 
   const config: RequestInit = {
-    method: data ? 'POST' : 'GET',
+    method: data ? (customConfig.method || 'POST') : (customConfig.method || 'GET'),
     body: data ? JSON.stringify(data) : undefined,
     headers: {
       'Content-Type': 'application/json',
@@ -24,32 +43,70 @@ async function apiFetch<T>(endpoint: string, options: RequestOptions = {}): Prom
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}))
-    throw new Error(errorData.message || 'API request failed')
+    throw new Error(errorData.error || errorData.message || `Request failed with status ${response.status}`)
   }
 
   if (response.status === 204) {
     return {} as T
   }
 
-  return response.json()
+  const json = await response.json()
+  // If the backend wraps responses in { success: true, data: ... }
+  return (json && typeof json === 'object' && 'data' in json && json.success !== undefined)
+    ? json.data
+    : json
 }
 
-// API Functions
+// Typed API operations
 export const api = {
-  login: (data: any) => apiFetch('/auth/login', { data }),
-  register: (data: any) => apiFetch('/auth/register', { data }),
-  
-  getProblems: () => apiFetch('/problems'),
-  getProblem: (slug: string) => apiFetch(`/problems/${slug}`),
-  
-  submitCode: (problemId: string, code: string, language: string) => 
-    apiFetch(`/submissions`, { data: { problemId, code, language } }),
-  
+  // Auth
+  login: (credentials: { email: string; password: string }) =>
+    apiFetch<{ user: any; accessToken: string; refreshToken: string }>('/auth/login', {
+      method: 'POST',
+      data: credentials,
+    }),
+
+  register: (payload: { email: string; username: string; displayName?: string; password: string }) =>
+    apiFetch<{ user: any; accessToken: string; refreshToken: string }>('/auth/register', {
+      method: 'POST',
+      data: payload,
+    }),
+
+  getMe: () => apiFetch<any>('/auth/me', { method: 'GET' }),
+
+  refreshToken: (refreshToken: string) =>
+    apiFetch<{ accessToken: string }>('/auth/refresh', {
+      method: 'POST',
+      data: { refreshToken },
+    }),
+
+  // Problems
+  getProblems: (params?: { page?: number; pageSize?: number; difficulty?: string; tag?: string; search?: string }) => {
+    const searchParams = new URLSearchParams()
+    if (params?.page) searchParams.set('page', params.page.toString())
+    if (params?.pageSize) searchParams.set('pageSize', params.pageSize.toString())
+    if (params?.difficulty) searchParams.set('difficulty', params.difficulty)
+    if (params?.tag) searchParams.set('tag', params.tag)
+    if (params?.search) searchParams.set('search', params.search)
+    const queryString = searchParams.toString() ? `?${searchParams.toString()}` : ''
+    return apiFetch<any>(`/problems${queryString}`)
+  },
+
+  getProblem: (slug: string) => apiFetch<any>(`/problems/${slug}`),
+
+  // Submissions
+  submitCode: (problemId: string, code: string, language: string) =>
+    apiFetch<any>('/submissions', {
+      method: 'POST',
+      data: { problemId, code, language },
+    }),
+
   getSubmissions: (problemId?: string) => {
     const query = problemId ? `?problemId=${problemId}` : ''
-    return apiFetch(`/submissions${query}`)
+    return apiFetch<any>(`/submissions${query}`)
   },
-  
-  getProfile: () => apiFetch('/users/me'),
-  getLeaderboard: () => apiFetch('/users/leaderboard'),
+
+  // Users & Leaderboard
+  getProfile: (username: string) => apiFetch<any>(`/users/profile/${username}`),
+  getLeaderboard: (page = 1, pageSize = 50) => apiFetch<any>(`/users/leaderboard?page=${page}&pageSize=${pageSize}`),
 }

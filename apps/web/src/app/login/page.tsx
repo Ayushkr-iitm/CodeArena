@@ -1,17 +1,26 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Code2, Mail, Lock, ArrowRight, Sparkles, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { Code2, Mail, Lock, ArrowRight, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { useAuth } from '@/context/AuthContext'
 
 export default function LoginPage() {
   const router = useRouter()
+  const { login, isAuthenticated } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (isAuthenticated) {
+      router.push('/problems')
+    }
+  }, [isAuthenticated, router])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -19,29 +28,13 @@ export default function LoginPage() {
     setError(null)
 
     try {
-      const res = await fetch('http://localhost:4000/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      })
-
-      const data = await res.json()
-
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Failed to login')
-      }
-
-      // Save tokens
-      localStorage.setItem('accessToken', data.data.accessToken)
-      localStorage.setItem('refreshToken', data.data.refreshToken)
-      localStorage.setItem('user', JSON.stringify(data.data.user))
-
+      await login({ email, password })
       setSuccess(true)
       setTimeout(() => {
         router.push('/problems')
-      }, 800)
+      }, 600)
     } catch (err: any) {
-      setError(err.message || 'Invalid credentials')
+      setError(err.message || 'Invalid email or password')
     } finally {
       setIsLoading(false)
     }
@@ -141,9 +134,6 @@ export default function LoginPage() {
               <label className="text-xs font-mono font-medium text-zinc-300">
                 PASSWORD
               </label>
-              <a href="#" className="text-xs text-brand-400 hover:underline">
-                Forgot password?
-              </a>
             </div>
             <div className="relative">
               <Lock className="w-4 h-4 text-zinc-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
