@@ -20,12 +20,17 @@ import {
   Settings2,
   Type,
   SunMoon,
-  Zap
+  Zap,
+  MessageSquare,
+  Code2
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { useAuth } from '@/context/AuthContext'
 import { subscribeToSubmission } from '@/lib/socket'
 import CodeEditor, { SupportedLanguage } from '@/components/CodeEditor'
+import ProblemEditorial from '@/components/ProblemEditorial'
+import ProblemSolutions from '@/components/ProblemSolutions'
+import ProblemDiscussion from '@/components/ProblemDiscussion'
 
 interface ProblemDetail {
   id: string
@@ -85,7 +90,9 @@ export default function ProblemDetailPage({ params }: { params: { slug: string }
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'description' | 'editorial' | 'submissions'>('description')
+  const [activeTab, setActiveTab] = useState<
+    'description' | 'editorial' | 'solutions' | 'discussion' | 'submissions'
+  >('description')
   
   // Editor Config & State
   const [language, setLanguage] = useState<SupportedLanguage>('CPP')
@@ -510,7 +517,7 @@ export default function ProblemDetailPage({ params }: { params: { slug: string }
             </button>
             <button
               onClick={() => setActiveTab('editorial')}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                 activeTab === 'editorial'
                   ? 'bg-surface-200 text-white shadow-sm border border-white/[0.06]'
                   : 'text-zinc-400 hover:text-zinc-200'
@@ -520,8 +527,30 @@ export default function ProblemDetailPage({ params }: { params: { slug: string }
               <span>Editorial</span>
             </button>
             <button
+              onClick={() => setActiveTab('solutions')}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                activeTab === 'solutions'
+                  ? 'bg-surface-200 text-white shadow-sm border border-white/[0.06]'
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              <Code2 className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Solutions</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('discussion')}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                activeTab === 'discussion'
+                  ? 'bg-surface-200 text-white shadow-sm border border-white/[0.06]'
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              <MessageSquare className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Discussion</span>
+            </button>
+            <button
               onClick={() => setActiveTab('submissions')}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                 activeTab === 'submissions'
                   ? 'bg-surface-200 text-white shadow-sm border border-white/[0.06]'
                   : 'text-zinc-400 hover:text-zinc-200'
@@ -640,14 +669,15 @@ export default function ProblemDetailPage({ params }: { params: { slug: string }
             )}
 
             {activeTab === 'editorial' && (
-              <div className="space-y-4">
-                <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300">
-                  💡 <strong>Algorithmic Strategy</strong>
-                </div>
-                <p className="text-xs text-zinc-300 leading-relaxed">
-                  Carefully analyze the problem constraints. For $N \le 10^5$, an $O(N \log N)$ or $O(N)$ solution is required to pass within the {problem.timeLimit} ms time limit. Brute-force $O(N^2)$ approaches will result in Time Limit Exceeded (TLE).
-                </p>
-              </div>
+              <ProblemEditorial problemId={problem.id} problemTitle={problem.title} />
+            )}
+
+            {activeTab === 'solutions' && (
+              <ProblemSolutions problemId={problem.id} problemTitle={problem.title} />
+            )}
+
+            {activeTab === 'discussion' && (
+              <ProblemDiscussion problemId={problem.id} />
             )}
 
             {activeTab === 'submissions' && (

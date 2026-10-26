@@ -170,4 +170,36 @@ export const api = {
   // Users & Leaderboard
   getProfile: (username: string) => apiFetch<any>(`/users/profile/${username}`),
   getLeaderboard: (page = 1, pageSize = 50) => apiFetch<any>(`/users/leaderboard?page=${page}&pageSize=${pageSize}`),
+
+  // Community (Comments, Discussions, Solutions, Editorial)
+  getComments: (problemId: string) => apiFetch<any[]>(`/community/comments/${problemId}`),
+  postComment: (problemId: string, content: string, parentId?: string) =>
+    apiFetch<any>('/community/comments', {
+      method: 'POST',
+      data: { problemId, content, parentId },
+    }),
+  voteComment: (commentId: string, type: 'UPVOTE' | 'DOWNVOTE') =>
+    apiFetch<any>(`/community/comments/${commentId}/vote`, {
+      method: 'POST',
+      data: { type },
+    }),
+  getSolutions: (problemId: string) => apiFetch<any[]>(`/community/solutions/${problemId}`),
+  postSolution: (data: {
+    problemId: string
+    title: string
+    description: string
+    code: string
+    language: string
+    timeComplexity: string
+    spaceComplexity: string
+  }) =>
+    apiFetch<any>('/community/solutions', {
+      method: 'POST',
+      data,
+    }),
+  voteSolution: (solutionId: string) =>
+    apiFetch<any>(`/community/solutions/${solutionId}/vote`, {
+      method: 'POST',
+    }),
+  getEditorial: (problemId: string) => apiFetch<any>(`/community/editorial/${problemId}`),
 }

@@ -14,6 +14,7 @@ import { problemRouter } from "./routes/problem.routes";
 import { submissionRouter } from "./routes/submission.routes";
 import { userRouter } from "./routes/user.routes";
 import { contestRouter } from "./routes/contest.routes";
+import { communityRouter } from "./routes/community.routes";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -57,6 +58,7 @@ app.use("/api/problems", problemRouter);
 app.use("/api/submissions", submissionRouter);
 app.use("/api/users", userRouter);
 app.use("/api/contests", contestRouter);
+app.use("/api/community", communityRouter);
 
 // ============================================
 // ERROR HANDLING
