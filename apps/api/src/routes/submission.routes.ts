@@ -3,7 +3,8 @@ import { z } from "zod";
 import prisma from "../lib/prisma";
 import { AppError } from "../middleware/errorHandler";
 import { authenticate, AuthRequest } from "../middleware/auth";
-import { executeCode, evaluateSuite, checkOutput } from "../judge";
+import { executeCode, checkOutput } from "../judge";
+import { enqueueSubmission, getQueueMetrics } from "../queue";
 
 export const submissionRouter = Router();
 
@@ -20,6 +21,18 @@ const submitSchema = z.object({
   problemId: z.string().min(1),
   language: z.enum(["CPP", "PYTHON", "JAVA"]),
   code: z.string().min(1, "Code cannot be empty"),
+});
+
+// ============================================
+// GET /api/submissions/queue/metrics - Queue Telemetry
+// ============================================
+submissionRouter.get("/queue/metrics", async (_req, res, next) => {
+  try {
+    const metrics = await getQueueMetrics();
+    res.json({ success: true, data: metrics });
+  } catch (error) {
+    next(error);
+  }
 });
 
 // ============================================
@@ -77,7 +90,7 @@ submissionRouter.post("/run", async (req, res, next) => {
 });
 
 // ============================================
-// POST /api/submissions - Submit code to Online Judge
+// POST /api/submissions - Enqueue code submission
 // ============================================
 submissionRouter.post("/", authenticate, async (req: AuthRequest, res, next) => {
   try {
@@ -87,83 +100,86 @@ submissionRouter.post("/", authenticate, async (req: AuthRequest, res, next) => 
     const problem = await prisma.problem.findUnique({
       where: { id: problemId },
       include: {
-        testCases: {
-          orderBy: { order: "asc" },
-        },
+        _count: { select: { testCases: true } },
       },
     });
     if (!problem) throw new AppError("Problem not found", 404);
 
-    if (problem.testCases.length === 0) {
+    if (problem._count.testCases === 0) {
       throw new AppError("This problem has no test cases configured in the judge.", 400);
     }
 
-    // 1. Create submission with RUNNING status
+    // 1. Create initial submission in DB with PENDING status
     const submission = await prisma.submission.create({
       data: {
         userId: req.userId!,
         problemId,
         language,
         code,
-        verdict: "RUNNING",
-        totalTestCases: problem.testCases.length,
+        verdict: "PENDING",
+        totalTestCases: problem._count.testCases,
         testCasesPassed: 0,
-      },
-    });
-
-    // 2. Evaluate solution against all test cases in the execution engine
-    const evalResult = await evaluateSuite(
-      language,
-      code,
-      problem.testCases,
-      problem.timeLimit,
-      problem.memoryLimit
-    );
-
-    // 3. Check if first time accepted to award rating bonus
-    let ratingBonus = 0;
-    if (evalResult.verdict === "ACCEPTED") {
-      const priorAccepted = await prisma.submission.findFirst({
-        where: {
-          userId: req.userId!,
-          problemId,
-          verdict: "ACCEPTED",
-          id: { not: submission.id },
-        },
-      });
-
-      if (!priorAccepted) {
-        const bonusMap: Record<string, number> = { EASY: 10, MEDIUM: 20, HARD: 35 };
-        ratingBonus = bonusMap[problem.difficulty] || 15;
-        await prisma.user.update({
-          where: { id: req.userId },
-          data: { rating: { increment: ratingBonus } },
-        });
-      }
-    }
-
-    // 4. Update submission record with final verdict and performance telemetry
-    const updatedSubmission = await prisma.submission.update({
-      where: { id: submission.id },
-      data: {
-        verdict: evalResult.verdict,
-        testCasesPassed: evalResult.testCasesPassed,
-        totalTestCases: evalResult.totalTestCases,
-        runtime: evalResult.maxRuntimeMs,
-        memory: evalResult.peakMemoryKb,
-        errorMessage: evalResult.compileOutput || evalResult.testCaseResults.find((tc) => tc.error)?.error,
       },
       include: {
         problem: { select: { title: true, slug: true, difficulty: true } },
       },
     });
 
-    res.status(201).json({
+    // 2. Dispatch to async worker queue (Redis BullMQ or In-Memory worker pool)
+    const jobId = await enqueueSubmission({
+      submissionId: submission.id,
+      problemId,
+      userId: req.userId!,
+      language,
+      code,
+    });
+
+    res.status(202).json({
       success: true,
       data: {
-        submission: updatedSubmission,
-        evaluation: evalResult,
-        ratingBonus,
+        submissionId: submission.id,
+        jobId,
+        verdict: "PENDING",
+        status: "QUEUED",
+        submission,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ============================================
+// GET /api/submissions/:id/status - Poll submission status
+// ============================================
+submissionRouter.get("/:id/status", authenticate, async (req: AuthRequest, res, next) => {
+  try {
+    const submission = await prisma.submission.findUnique({
+      where: { id: req.params.id },
+      select: {
+        id: true,
+        verdict: true,
+        runtime: true,
+        memory: true,
+        testCasesPassed: true,
+        totalTestCases: true,
+        errorMessage: true,
+        createdAt: true,
+        problem: {
+          select: { title: true, slug: true, difficulty: true },
+        },
+      },
+    });
+
+    if (!submission) throw new AppError("Submission not found", 404);
+
+    const isFinished = !["PENDING", "RUNNING"].includes(submission.verdict);
+
+    res.json({
+      success: true,
+      data: {
+        ...submission,
+        isFinished,
       },
     });
   } catch (error) {

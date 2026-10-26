@@ -147,6 +147,12 @@ export const api = {
   getProblemSubmissions: (slug: string) =>
     apiFetch<any>(`/submissions/problem/${slug}`),
 
+  getSubmissionStatus: (id: string) =>
+    apiFetch<any>(`/submissions/${id}/status`),
+
+  getQueueMetrics: () =>
+    apiFetch<any>('/submissions/queue/metrics'),
+
   // Users & Leaderboard
   getProfile: (username: string) => apiFetch<any>(`/users/profile/${username}`),
   getLeaderboard: (page = 1, pageSize = 50) => apiFetch<any>(`/users/leaderboard?page=${page}&pageSize=${pageSize}`),

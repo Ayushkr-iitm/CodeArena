@@ -258,7 +258,7 @@ export default function ProblemDetailPage({ params }: { params: { slug: string }
     }
   }
 
-  // Submit code to backend Online Judge
+  // Submit code to backend Online Judge via asynchronous worker queue
   const handleSubmitCode = async () => {
     if (!isAuthenticated) {
       alert('Please sign in to submit your solution to the online judge!')
@@ -269,34 +269,71 @@ export default function ProblemDetailPage({ params }: { params: { slug: string }
 
     setIsRunning(true)
     setConsoleTab('result')
+    setTestResult({
+      status: 'Queued in Worker Pool...',
+      runtime: '--',
+      memory: '--',
+      output: 'Job enqueued. Waiting for judge worker slot...',
+      isSuccess: false,
+    })
+
     try {
       const res = await api.submitCode(problem.id, userCode, language)
       const data = res?.data || res
-      const { submission, evaluation, ratingBonus } = data
-      const isAccepted = evaluation.verdict === 'ACCEPTED'
+      const submissionId = data.submissionId || data.id
 
-      let statusText = isAccepted 
-        ? `Accepted (${evaluation.testCasesPassed}/${evaluation.totalTestCases} Test Cases Passed)`
-        : `${evaluation.verdict.replace(/_/g, ' ')} (${evaluation.testCasesPassed}/${evaluation.totalTestCases} Passed)`
-
-      if (ratingBonus && ratingBonus > 0) {
-        statusText += ` — 🎉 +${ratingBonus} Rating Bonus!`
+      if (!submissionId) {
+        throw new Error('No submission ID returned from queue')
       }
 
-      setTestResult({
-        status: statusText,
-        runtime: `${evaluation.maxRuntimeMs} ms`,
-        memory: `${(evaluation.peakMemoryKb / 1024).toFixed(1)} MB`,
-        output: isAccepted 
-          ? 'All evaluation test cases passed successfully.' 
-          : (evaluation.testCaseResults.find((tc: any) => tc.error)?.error || 'Evaluation failed on hidden test cases.'),
-        error: evaluation.compileOutput,
-        isSuccess: isAccepted,
-        ratingBonus,
-      })
+      // Poll submission status until worker finishes
+      const maxAttempts = 40 // 40 * 500ms = 20s max polling
+      let attempts = 0
+      
+      const pollInterval = setInterval(async () => {
+        attempts++
+        try {
+          const statusRes = await api.getSubmissionStatus(submissionId)
+          const sub = statusRes?.data || statusRes
 
-      loadSubmissions()
+          if (sub.verdict === 'RUNNING') {
+            setTestResult((prev) => prev ? {
+              ...prev,
+              status: 'Evaluating in Sandbox...',
+              output: `Worker executing test cases in isolated sandbox...`,
+            } : null)
+          }
+
+          if (sub.isFinished || (sub.verdict !== 'PENDING' && sub.verdict !== 'RUNNING') || attempts >= maxAttempts) {
+            clearInterval(pollInterval)
+            setIsRunning(false)
+
+            const isAccepted = sub.verdict === 'ACCEPTED'
+            const statusText = isAccepted
+              ? `Accepted (${sub.testCasesPassed}/${sub.totalTestCases} Test Cases Passed)`
+              : `${sub.verdict.replace(/_/g, ' ')} (${sub.testCasesPassed}/${sub.totalTestCases} Passed)`
+
+            setTestResult({
+              status: statusText,
+              runtime: `${sub.runtime ?? 0} ms`,
+              memory: `${((sub.memory ?? 0) / 1024).toFixed(1)} MB`,
+              output: isAccepted
+                ? 'All evaluation test cases passed successfully.'
+                : (sub.errorMessage || 'One or more test cases failed.'),
+              error: isAccepted ? undefined : sub.errorMessage,
+              isSuccess: isAccepted,
+            })
+
+            loadSubmissions()
+          }
+        } catch (pollErr: any) {
+          clearInterval(pollInterval)
+          setIsRunning(false)
+          console.error('Polling error:', pollErr)
+        }
+      }, 500)
     } catch (err: any) {
+      setIsRunning(false)
       setTestResult({
         status: 'Submission Failed',
         runtime: '0 ms',
@@ -305,8 +342,6 @@ export default function ProblemDetailPage({ params }: { params: { slug: string }
         error: err.message || 'Judge evaluation failed',
         isSuccess: false,
       })
-    } finally {
-      setIsRunning(false)
     }
   }
 
