@@ -30,32 +30,43 @@ The platform includes full real-time telemetry over WebSockets, timed contest sc
 
 ```mermaid
 flowchart TD
-    Client["Client Browser (Next.js 14 Web)"] <-->|WebSockets (Socket.IO)| WSHub["Real-Time Gateway Hub"]
-    Client -->|HTTPS REST API| APIGateway["Express API Gateway"]
-    
-    subgraph Data Layer
-        APIGateway -->|ORM Queries| DB[(Database: SQLite / PostgreSQL)]
+    Client["Client Browser (Next.js 14 Web)"]
+    WSHub["Real-Time Gateway Hub (Socket.IO)"]
+    APIGateway["Express API Gateway"]
+
+    subgraph DataLayer ["Data Layer"]
+        DB[("Database (SQLite / PostgreSQL)")]
     end
 
-    subgraph Asynchronous Queue
-        APIGateway -->|Push Submission Job| QueueMgr["Queue Manager (BullMQ / In-Memory FIFO)"]
-        QueueMgr --> WorkerPool["Concurrent Judge Workers"]
+    subgraph AsyncQueue ["Asynchronous Queue"]
+        QueueMgr["Queue Manager (BullMQ / In-Memory FIFO)"]
+        WorkerPool["Concurrent Judge Workers"]
     end
 
-    subgraph Sandboxed Execution Engine
-        WorkerPool --> SecurityScan["Static Analysis Security Scanner"]
-        SecurityScan --> DriverSelect{"Driver Selector"}
-        DriverSelect -->|Container Runtime| DockerDriver["Docker Isolated Container"]
-        DriverSelect -->|Host Fallback| LocalDriver["Isolated Ephemeral Process"]
-        
-        DockerDriver --> OutputChecker["Whitespace-Tolerant Output Normalizer"]
-        LocalDriver --> OutputChecker
-        OutputChecker --> VerdictCalc["Verdict Aggregator (AC, WA, TLE, RE, CE)"]
+    subgraph JudgeEngine ["Sandboxed Execution Engine"]
+        SecurityScan["Static Analysis Security Scanner"]
+        DriverSelect{"Driver Selector"}
+        DockerDriver["Docker Isolated Container"]
+        LocalDriver["Isolated Ephemeral Process"]
+        OutputChecker["Whitespace-Tolerant Output Normalizer"]
+        VerdictCalc["Verdict Aggregator (AC, WA, TLE, RE, CE)"]
     end
 
-    VerdictCalc -->|Telemetry Event| WSHub
-    VerdictCalc -->|Persist Result| DB
-    WSHub -->|Live Streaming Verdict & Standings| Client
+    Client <-->|"WebSockets Telemetry"| WSHub
+    Client -->|"HTTP REST API"| APIGateway
+    APIGateway -->|"ORM Queries"| DB
+    APIGateway -->|"Push Submission Job"| QueueMgr
+    QueueMgr --> WorkerPool
+    WorkerPool --> SecurityScan
+    SecurityScan --> DriverSelect
+    DriverSelect -->|"Container Runtime"| DockerDriver
+    DriverSelect -->|"Host Fallback"| LocalDriver
+    DockerDriver --> OutputChecker
+    LocalDriver --> OutputChecker
+    OutputChecker --> VerdictCalc
+    VerdictCalc -->|"Telemetry Event"| WSHub
+    VerdictCalc -->|"Persist Result"| DB
+    WSHub -->|"Live Streaming Verdict"| Client
 ```
 
 ---
