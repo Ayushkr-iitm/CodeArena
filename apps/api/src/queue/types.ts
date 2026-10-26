@@ -1,4 +1,5 @@
-import { JudgeLanguage, SubmissionEvaluationResult } from "../judge/types";
+import { JudgeLanguage } from "../judge/types";
+import { SubmissionEvaluationResult } from "../judge";
 
 export interface SubmissionJobData {
   submissionId: string;

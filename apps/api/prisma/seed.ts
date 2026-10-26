@@ -372,6 +372,83 @@ For example, "ace" is a subsequence of "abcde".`,
   });
   console.log(`✅ Problem: ${lcs.title}`);
 
+  // ============================================
+  // CREATE SAMPLE CONTESTS
+  // ============================================
+
+  // Contest 1: Live / Running Contest
+  const liveContest = await prisma.contest.upsert({
+    where: { slug: "codearena-biweekly-clash-1" },
+    update: {},
+    create: {
+      title: "CodeArena Biweekly Clash #1",
+      slug: "codearena-biweekly-clash-1",
+      description: "Compete against programmers worldwide in a 2-hour algorithmic battle. Features 3 problems ranging from Easy to Medium with standard ICPC scoring rules.",
+      startTime: new Date(Date.now() - 30 * 60 * 1000), // Started 30 min ago
+      endTime: new Date(Date.now() + 90 * 60 * 1000),   // Ends in 90 min
+      problems: {
+        create: [
+          { problemId: twoSum.id, order: 1, points: 100 },
+          { problemId: reverseStr.id, order: 2, points: 100 },
+          { problemId: validParens.id, order: 3, points: 200 },
+        ],
+      },
+      participants: {
+        create: [
+          { userId: admin.id, score: 200, penalty: 42, rank: 1 },
+          { userId: user.id, score: 100, penalty: 18, rank: 2 },
+        ],
+      },
+    },
+  });
+  console.log(`✅ Contest (Live): ${liveContest.title}`);
+
+  // Contest 2: Upcoming Contest
+  const upcomingContest = await prisma.contest.upsert({
+    where: { slug: "codearena-grand-championship-2026" },
+    update: {},
+    create: {
+      title: "CodeArena Grand Championship 2026",
+      slug: "codearena-grand-championship-2026",
+      description: "The flagship annual coding contest. 4 challenging algorithmic tasks designed to test deep problem solving skills, dynamic programming, and data structures.",
+      startTime: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000), // In 3 days
+      endTime: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000 + 3 * 60 * 60 * 1000), // 3 hours duration
+      problems: {
+        create: [
+          { problemId: maxSubarray.id, order: 1, points: 250 },
+          { problemId: lcs.id, order: 2, points: 500 },
+        ],
+      },
+    },
+  });
+  console.log(`✅ Contest (Upcoming): ${upcomingContest.title}`);
+
+  // Contest 3: Past / Completed Contest
+  const pastContest = await prisma.contest.upsert({
+    where: { slug: "codearena-inaugural-cup-0" },
+    update: {},
+    create: {
+      title: "CodeArena Inaugural Cup #0",
+      slug: "codearena-inaugural-cup-0",
+      description: "The contest that started it all! Check out the archive, browse final standings, and practice the past problem set.",
+      startTime: new Date(Date.now() - 48 * 60 * 60 * 1000), // 2 days ago
+      endTime: new Date(Date.now() - 46 * 60 * 60 * 1000),
+      problems: {
+        create: [
+          { problemId: twoSum.id, order: 1, points: 100 },
+          { problemId: maxSubarray.id, order: 2, points: 200 },
+        ],
+      },
+      participants: {
+        create: [
+          { userId: admin.id, score: 300, penalty: 35, rank: 1 },
+          { userId: user.id, score: 200, penalty: 55, rank: 2 },
+        ],
+      },
+    },
+  });
+  console.log(`✅ Contest (Past): ${pastContest.title}`);
+
   console.log("\n🎉 Database seeded successfully!");
   console.log("\n📋 Login credentials:");
   console.log("   Admin: admin@codearena.com / admin123");

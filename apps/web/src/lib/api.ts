@@ -153,6 +153,20 @@ export const api = {
   getQueueMetrics: () =>
     apiFetch<any>('/submissions/queue/metrics'),
 
+  // Contests
+  getContests: () => apiFetch<any[]>('/contests'),
+  getContest: (slug: string) => apiFetch<any>(`/contests/${slug}`),
+  registerContest: (id: string) =>
+    apiFetch<any>(`/contests/${id}/register`, { method: 'POST' }),
+  submitContestCode: (contestId: string, data: { problemId: string; language: string; code: string }) =>
+    apiFetch<any>(`/contests/${contestId}/submit`, { method: 'POST', data }),
+  getContestLeaderboard: (slug: string) =>
+    apiFetch<any>(`/contests/${slug}/leaderboard`),
+  createContest: (data: any) =>
+    apiFetch<any>('/contests', { method: 'POST', data }),
+  deleteContest: (id: string) =>
+    apiFetch<any>(`/contests/${id}`, { method: 'DELETE' }),
+
   // Users & Leaderboard
   getProfile: (username: string) => apiFetch<any>(`/users/profile/${username}`),
   getLeaderboard: (page = 1, pageSize = 50) => apiFetch<any>(`/users/leaderboard?page=${page}&pageSize=${pageSize}`),

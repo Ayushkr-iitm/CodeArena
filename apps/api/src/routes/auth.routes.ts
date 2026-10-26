@@ -13,12 +13,12 @@ function generateTokens(userId: string, role: string) {
   const accessToken = jwt.sign(
     { userId, role },
     process.env.JWT_ACCESS_SECRET || "fallback-secret",
-    { expiresIn: process.env.JWT_ACCESS_EXPIRES_IN || "15m" }
+    { expiresIn: (process.env.JWT_ACCESS_EXPIRES_IN || "15m") as any }
   );
   const refreshToken = jwt.sign(
     { userId, role },
     process.env.JWT_REFRESH_SECRET || "fallback-refresh-secret",
-    { expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || "7d" }
+    { expiresIn: (process.env.JWT_REFRESH_EXPIRES_IN || "7d") as any }
   );
   return { accessToken, refreshToken };
 }
@@ -146,7 +146,7 @@ authRouter.post("/refresh", async (req, res, next) => {
     const accessToken = jwt.sign(
       { userId: payload.userId, role: payload.role },
       process.env.JWT_ACCESS_SECRET || "fallback-secret",
-      { expiresIn: process.env.JWT_ACCESS_EXPIRES_IN || "15m" }
+      { expiresIn: (process.env.JWT_ACCESS_EXPIRES_IN || "15m") as any }
     );
 
     res.json({ success: true, data: { accessToken } });
