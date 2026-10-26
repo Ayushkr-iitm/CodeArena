@@ -1,192 +1,292 @@
-# ⚔️ CodeArena — Production Online Judge & Competitive Programming Platform
+<div align="center">
+
+# ⚔️ CodeArena
+
+**An enterprise-grade, distributed Online Judge and Competitive Programming platform.**  
+Built for real-time competitive programming contests, high-throughput code execution, and collaborative algorithmic problem-solving.
 
 [![CI/CD Pipeline](https://github.com/Ayushkr-iitm/CodeArena/actions/workflows/ci.yml/badge.svg)](https://github.com/Ayushkr-iitm/CodeArena/actions/workflows/ci.yml)
-[![Tests Passing](https://img.shields.io/badge/tests-51%20passing-brightgreen.svg)](https://github.com/Ayushkr-iitm/CodeArena)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Next.js 14](https://img.shields.io/badge/Next.js-14%20App%20Router-black.svg)](https://nextjs.org/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.6-blue.svg)](https://www.typescriptlang.org/)
+[![Test Suite](https://img.shields.io/badge/tests-51%20passing-brightgreen.svg)](https://github.com/Ayushkr-iitm/CodeArena)
+[![Docker](https://img.shields.io/badge/docker-ready-2496ED.svg?logo=docker&logoColor=white)](docker-compose.yml)
+[![Node.js](https://img.shields.io/badge/node-%3E%3D18.0.0-339933.svg?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![TypeScript](https://img.shields.io/badge/typescript-%5E5.6-3178C6.svg?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-CodeArena is an enterprise-grade, full-stack Online Judge and Competitive Programming platform built end-to-end with **Next.js 14 App Router**, **Express TypeScript**, **Prisma ORM**, **Socket.IO WebSockets**, **BullMQ / In-Memory Worker Queues**, and a multi-language **Sandboxed Code Execution Engine** (C++, Python, Java).
+[Live Demo](http://localhost:3000) • [Architecture](#-architecture--data-flow) • [Features](#-platform-features) • [Quickstart](#-quickstart) • [API Docs](#-api-reference)
+
+</div>
 
 ---
 
-## 🏛️ System Architecture
+## 📖 Overview
+
+**CodeArena** is a production-ready competitive programming platform modeled after platforms like Codeforces and LeetCode. It features a distributed code execution engine that evaluates untrusted user submissions in real time across **C++ (g++)**, **Python 3**, and **Java** inside hardened sandboxes.
+
+The platform includes full real-time telemetry over WebSockets, timed contest scoring using the official ICPC penalty system, interactive Monaco code editing, threaded community discussion boards, progressive hint reveals, and comprehensive test coverage.
+
+---
+
+## 🏛️ Architecture & Data Flow
 
 ```mermaid
 flowchart TD
-    Client["Client Browser (Next.js 14 Web)"] -->|HTTP / REST| API["Express API Gateway (Port 4000)"]
-    Client <-->|WebSockets (Socket.IO)| WSHub["Real-Time Socket Hub"]
+    Client["Client Browser (Next.js 14 Web)"] <-->|WebSockets (Socket.IO)| WSHub["Real-Time Gateway Hub"]
+    Client -->|HTTPS REST API| APIGateway["Express API Gateway"]
     
-    API -->|Auth / CRUD| DB[(Database: SQLite / PostgreSQL)]
-    API -->|Submit Job| QueueMgr["Queue Manager (BullMQ / In-Memory)"]
-    
-    QueueMgr --> WorkerPool["Worker Pool (Concurrency: 4)"]
-    WorkerPool --> SecurityScan["Static Analysis Security Scanner"]
-    SecurityScan --> DriverSelect{"Driver Selector"}
-    
-    DriverSelect -->|Docker Available| DockerSandbox["Docker Container Driver"]
-    DriverSelect -->|Fallback| LocalProcess["Isolated Local Process Driver"]
-    
-    LocalProcess --> OutputChecker["Output Normalizer & Line-by-Line Checker"]
-    OutputChecker --> VerdictCalc["Verdict Aggregator (AC, WA, TLE, RE, CE)"]
-    
-    VerdictCalc -->|Telemetry Stream| WSHub
-    WSHub -->|Real-time Verdict & Leaderboard| Client
+    subgraph Data Layer
+        APIGateway -->|ORM Queries| DB[(Database: SQLite / PostgreSQL)]
+    end
+
+    subgraph Asynchronous Queue
+        APIGateway -->|Push Submission Job| QueueMgr["Queue Manager (BullMQ / In-Memory FIFO)"]
+        QueueMgr --> WorkerPool["Concurrent Judge Workers"]
+    end
+
+    subgraph Sandboxed Execution Engine
+        WorkerPool --> SecurityScan["Static Analysis Security Scanner"]
+        SecurityScan --> DriverSelect{"Driver Selector"}
+        DriverSelect -->|Container Runtime| DockerDriver["Docker Isolated Container"]
+        DriverSelect -->|Host Fallback| LocalDriver["Isolated Ephemeral Process"]
+        
+        DockerDriver --> OutputChecker["Whitespace-Tolerant Output Normalizer"]
+        LocalDriver --> OutputChecker
+        OutputChecker --> VerdictCalc["Verdict Aggregator (AC, WA, TLE, RE, CE)"]
+    end
+
+    VerdictCalc -->|Telemetry Event| WSHub
+    VerdictCalc -->|Persist Result| DB
+    WSHub -->|Live Streaming Verdict & Standings| Client
 ```
 
 ---
 
-## ✨ Key Features & Capabilities
+## ✨ Platform Features
 
-- **⚡ Isolated Execution Engine**:
-  - Multi-language compilation & execution pipeline for **C++ (g++)**, **Python 3**, and **Java**.
-  - Dual driver architecture: Docker container isolation with automatic fallback to ephemeral randomized process sandboxing.
-  - Granular limits: Execution time limits (ms), memory caps (MB), and process timeouts.
-- **🛡️ Sandbox Security Hardening**:
-  - Proactive static analysis scanner intercepting dangerous syscalls (`system`, `fork`, `exec`), low-level network sockets (`socket`, `sys/socket.h`, `windows.h`), and process escape attempts.
-  - Multi-tier API rate limiting with `express-rate-limit` protecting authentication, submission, and community endpoints.
-- **🔄 Asynchronous Worker Queue**:
-  - BullMQ with Redis persistence and automatic fallback to an in-memory priority FIFO queue.
-  - Zero server blocking; submissions process concurrently in isolated worker slots.
-- **📡 Real-Time WebSockets (Socket.IO)**:
-  - Live execution telemetry streaming (`PENDING` -> `RUNNING` -> `ACCEPTED` / `WRONG_ANSWER`).
-  - Real-time contest standings updates with ICPC scoring without page refreshes.
-  - Live activity ticker showing platform-wide submissions in real time.
-- **🏆 Timed Contest Engine & ICPC Scoring**:
-  - Timed contests with start/end windows and participant registration.
-  - Official ICPC penalty formula: `solvedMinutes + (attempts - 1) * 20` penalty minutes per rejected attempt before acceptance.
-  - Automatic tie-breaking: problems solved first, lower penalty minutes second.
-- **🌐 Community & Collaborative Learning**:
-  - Threaded discussion boards with nested replies and upvoting/downvoting.
-  - Community solution sharing with syntax-highlighted code and big-O time/space complexity tags.
-  - Progressive hint reveals (💡 Hint 1, 2, 3) and curated official editorials.
-- **💻 Monaco Code Editor Workbench**:
-  - Full VS Code editing experience with dark theme, keyboard shortcuts, syntax highlighting, and boilerplate templates.
-- **🧪 Comprehensive Test Suite (51/51 Passing)**:
-  - Unit tests: Checker normalization, compiler diagnostics, queue lifecycle, ICPC scoring formulas, security scanner.
-  - Integration tests: End-to-end auth flows, JWT sessions, community discussions, and voting logic.
-  - E2E tests: Sandboxed execution pipeline across Python and C++.
+### ⚡ Distributed Sandboxed Execution Engine
+* **Multi-Language Support**: Compiles and executes **C++ (g++ 6+)**, **Python 3.12**, and **Java** with strict time (ms) and memory (MB) limits.
+* **Dual Execution Drivers**: Production Docker containerization with automatic fallback to isolated, ephemeral local process sandboxes.
+* **Whitespace-Tolerant Checker**: Handles differing line endings (CRLF vs. LF), trailing whitespace, and blank lines while generating accurate line-by-line diff summaries.
+
+### 🛡️ Defense-in-Depth Security
+* **Static Analysis AST Scanner**: Proactively scans code prior to execution to intercept prohibited system calls (`fork`, `system`, `execve`), network sockets (`socket`, `<sys/socket.h>`, `<windows.h>`), and process escalation.
+* **Multi-Tier Rate Limiting**: Dedicated rate limiters on authentication, code submissions, and community endpoints to mitigate brute-force and DoS attacks.
+* **Security Headers**: Hardened with Helmet, CORS policy enforcement, and parameter validation via Zod schemas.
+
+### 🔄 Asynchronous Worker Queue
+* **BullMQ & Redis Architecture**: Asynchronous background job processing with zero thread blocking on the primary HTTP server.
+* **Resilient In-Memory Fallback**: Seamless zero-config in-memory FIFO worker pool if Redis is unavailable during local development.
+
+### 📡 Real-Time WebSockets & Telemetry
+* **Socket.IO Event Hub**: Live streaming status updates (`PENDING` ➔ `RUNNING` ➔ `ACCEPTED` / `WRONG_ANSWER`).
+* **Live Contest Standings**: Real-time ICPC scoreboard recalculations broadcast to all connected contestants.
+* **Presence & Activity Feed**: Real-time online user counters and platform-wide live submission tickers.
+
+### 🏆 Timed Contests & ICPC Scoring
+* **Contest Lifecycle Management**: Supports Upcoming, Active, and Finished states with synchronized countdown timers.
+* **Official ICPC Penalty System**: Computes standings by problems solved with tie-breaking penalty minutes:
+  $$\text{Penalty} = \text{Elapsed Minutes to Solve} + (20 \times \text{Rejected Attempts})$$
+
+### 💻 Monaco Code Editor Workbench
+* **VS Code Editor Core**: Syntax highlighting, bracket matching, indentation guides, and keyboard shortcuts.
+* **Multi-Tab Workbench**: Five dedicated panes: **Description**, **Editorial**, **Community Solutions**, **Discussion**, and **Submissions**.
+* **Live Testcase Playground**: Custom stdin input/output testing before formal contest submission.
+
+### 🌐 Community & Collaborative Learning
+* **Progressive Hint Reveals**: Multi-stage hints (💡 Hint 1, 2, 3) allowing users to learn without spoiling full solutions.
+* **Community Solutions**: User-submitted approaches with Big-O time and space complexity badges and upvote voting.
+* **Threaded Discussions**: Nested comment hierarchies with real-time score updates.
 
 ---
 
-## 📁 Repository Structure
+## 🗂️ Monorepo Structure
 
 ```
-.
-├── .github/
-│   └── workflows/
-│       └── ci.yml               # Automated CI/CD pipeline (Node 20, tests, build)
+codearena/
+├── .github/workflows/ci.yml       # GitHub Actions CI/CD Pipeline (Build + 51 Tests)
 ├── apps/
-│   ├── api/                     # Backend Express server & judge engine
-│   │   ├── prisma/              # Database schema, migrations, seed data
+│   ├── api/                       # Express + TypeScript Backend & Execution Engine
+│   │   ├── prisma/                # Database schema, migrations, and seed scripts
 │   │   ├── src/
-│   │   │   ├── app.ts           # Express app instance, security headers, rate limits
-│   │   │   ├── judge/           # Sandbox drivers, compiler, runner, security scanner
-│   │   │   ├── middleware/      # Auth, error handling, rate limiting
-│   │   │   ├── queue/           # BullMQ & In-Memory FIFO worker queue
-│   │   │   ├── routes/          # Auth, problems, submissions, contests, community
-│   │   │   └── socket/          # Socket.IO real-time event hub
-│   │   └── tests/               # 51 unit, integration, and e2e test suites
-│   └── web/                     # Next.js 14 App Router frontend
-│       ├── public/              # Static assets
+│   │   │   ├── app.ts             # Express application & middleware configuration
+│   │   │   ├── judge/             # Sandbox drivers, compilers, runner & security scanner
+│   │   │   ├── middleware/        # JWT auth, rate limiters, error handling
+│   │   │   ├── queue/             # BullMQ Redis queue & in-memory worker pool
+│   │   │   ├── routes/            # Auth, Problems, Submissions, Contests, Community
+│   │   │   └── socket/            # Socket.IO real-time event hub
+│   │   └── tests/                 # Unit, Integration, and E2E test suites
+│   └── web/                       # Next.js 14 App Router Frontend
+│       ├── public/                # Static assets & icons
 │       └── src/
-│           ├── app/             # Problems, Contests, Leaderboard, Profile, Admin
-│           ├── components/      # Monaco editor, discussions, solutions, stats
-│           └── lib/             # API client, Socket.IO singleton
+│           ├── app/               # Next.js App Router (Problems, Contests, Profile, Admin)
+│           ├── components/        # Monaco workbench, discussion threads, leaderboards
+│           └── lib/               # Socket.IO client, API fetch client
 ├── packages/
-│   └── shared/                  # Monorepo shared types, interfaces, enums
-├── Dockerfile.api               # Production multi-stage Docker build for backend
-├── Dockerfile.web               # Production multi-stage Docker build for frontend
-├── docker-compose.yml           # Full production stack (PostgreSQL, Redis, API, Web)
-└── package.json                 # Monorepo root workspaces config
+│   └── shared/                    # Monorepo shared TypeScript types and constants
+├── Dockerfile.api                 # Multi-stage Dockerfile for API & Judge Sandbox
+├── Dockerfile.web                 # Multi-stage Dockerfile for Next.js Frontend
+├── docker-compose.yml             # Full-stack composition (PostgreSQL, Redis, API, Web)
+└── package.json                   # Monorepo workspace configuration
 ```
 
 ---
 
-## 🚀 Quickstart Guide
+## 🚀 Quickstart
 
-### Option 1: Run Locally (Development Mode)
+### Option 1: Docker Compose (Production Setup)
 
-#### 1. Prerequisites
-- **Node.js**: v18+ (tested on Node 20 & 24)
-- **Compilers**: `g++` (for C++) and `python3` (for Python)
-
-#### 2. Install Dependencies
-```bash
-npm install
-```
-
-#### 3. Database Migration & Seeding
-```bash
-# Push Prisma schema to SQLite
-npm run db:push
-
-# Seed starter problems, contest, hints, and community discussions
-npm run db:seed --workspace=apps/api
-npm run --workspace=apps/api tsx prisma/seed-community.ts
-```
-
-#### 4. Run Automated Test Suite
-```bash
-npm test
-```
-*Executes all 51 Unit, Integration, and E2E test suites.*
-
-#### 5. Launch Development Servers
-```bash
-# Terminal 1: Backend API (http://localhost:4000)
-npm run dev:api
-
-# Terminal 2: Frontend App (http://localhost:3000)
-npm run dev:web
-```
-
----
-
-### Option 2: Run with Docker Compose (Production Mode)
-
-Spin up the entire stack with a single command:
+Spin up the entire stack—PostgreSQL, Redis, the Execution Engine, and the Next.js Frontend—with a single command:
 
 ```bash
 docker-compose up -d --build
 ```
 
-Services initialized:
-- **Web**: `http://localhost:3000`
-- **API & WebSockets**: `http://localhost:4000`
-- **PostgreSQL**: `localhost:5432`
-- **Redis**: `localhost:6379`
+Access the services:
+* **Frontend Web App**: [http://localhost:3000](http://localhost:3000)
+* **Backend API Gateway**: [http://localhost:4000](http://localhost:4000)
+* **API Health Check**: [http://localhost:4000/api/health](http://localhost:4000/api/health)
+
+---
+
+### Option 2: Local Development Setup
+
+#### 1. Prerequisites
+* **Node.js**: `v18.0.0` or higher (tested on Node 20 & 24)
+* **C++ Compiler**: `g++` (MinGW on Windows, GCC on Linux/macOS)
+* **Python**: `python3` (v3.10+)
+
+#### 2. Installation
+Clone the repository and install all dependencies across monorepo workspaces:
+
+```bash
+git clone https://github.com/Ayushkr-iitm/CodeArena.git
+cd CodeArena
+npm install
+```
+
+#### 3. Database Initialization & Seeding
+```bash
+# Push schema to SQLite database
+npm run db:push
+
+# Seed starter problems, tags, users, and contests
+npm run db:seed --workspace=apps/api
+
+# Seed community discussions, solutions, and hints
+npm run --workspace=apps/api tsx prisma/seed-community.ts
+```
+
+#### 4. Run Development Servers
+```bash
+# Start backend API (Port 4000)
+npm run dev:api
+
+# Start frontend application (Port 3000)
+npm run dev:web
+```
 
 ---
 
 ## 🔑 Default Credentials
 
-| Role | Email | Password |
-| :--- | :--- | :--- |
-| **Admin** | `admin@codearena.com` | `admin123` |
-| **Competitor** | `user@codearena.com` | `user123` |
+Pre-seeded credentials for local evaluation:
+
+| Role | Email | Password | Access Level |
+| :--- | :--- | :--- | :--- |
+| **Administrator** | `admin@codearena.com` | `admin123` | Problem creation, contest scheduling, full management |
+| **Competitor** | `user@codearena.com` | `user123` | Problem solving, contest participation, community sharing |
 
 ---
 
-## 🗺️ Roadmap & Milestones
+## 🧪 Testing & Quality Assurance
 
-- [x] **Step 1**: Monorepo Architecture & Project Scaffolding
-- [x] **Step 2**: JWT Authentication & User Session Management
-- [x] **Step 3**: Problem Management & Admin Creation Workbench
-- [x] **Step 4**: Monaco Code Editor & Resizable Workspace
-- [x] **Step 5**: Sandboxed Multi-Language Execution Engine
-- [x] **Step 6**: Online Judge Pipeline & Output Normalization
-- [x] **Step 7**: Redis + BullMQ Asynchronous Job Queue & Worker Pool
-- [x] **Step 8**: Timed Contests & ICPC Standings Engine
-- [x] **Step 9**: Socket.IO WebSockets & Real-Time Presence
-- [x] **Step 10**: User Profiles, Rating Tiers & Global Leaderboard
-- [x] **Step 11**: Community Discussions, Hint Reveals & Editorial Sharing
-- [x] **Step 12**: Automated Testing Suite (Unit, Integration, E2E)
-- [x] **Step 13**: Sandbox Security Scanner & Rate Limiting Hardening
-- [x] **Step 14**: DevOps, Production Docker Compose & GitHub Actions CI/CD
+CodeArena includes comprehensive automated test suites covering unit logic, database integration, and end-to-end sandbox execution:
+
+```bash
+# Run all test suites across the entire monorepo
+npm test
+
+# Run specific test suites
+npm run test:unit --workspace=apps/api         # Unit tests (checker, compiler, queue, scoring, security)
+npm run test:integration --workspace=apps/api  # Integration tests (auth, sessions, community)
+npm run test:e2e --workspace=apps/api          # E2E judge pipeline tests (Python & C++ execution)
+```
+
+```
+Test Results:
+  ✔ Checker Normalization (whitespace, CRLF/LF, diffs)
+  ✔ Judge Compiler Diagnostics (C++, Python)
+  ✔ Asynchronous Worker Pool & In-Memory Queue
+  ✔ ICPC Penalty Scoring Formula & Rating Bonuses
+  ✔ Sandbox Security AST Scanner (Syscall & Network Interception)
+  ✔ Authentication & JWT Lifecycle (Register, Login, Protected Me)
+  ✔ Community Discussions, Threaded Replies & Solution Voting
+  ✔ E2E Code Execution across all verdicts (AC, WA, TLE, RE, CE)
+
+ℹ tests 51 | ℹ suites 15 | ℹ pass 51 | ℹ fail 0 (100% Passing)
+```
+
+---
+
+## 🔌 API Reference
+
+### Authentication (`/api/auth`)
+* `POST /api/auth/register` — Register a new competitor account.
+* `POST /api/auth/login` — Authenticate and receive access/refresh JWT tokens.
+* `POST /api/auth/refresh` — Issue a new access token using a valid refresh token.
+* `GET /api/auth/me` — Retrieve the profile of the currently authenticated user.
+
+### Problems (`/api/problems`)
+* `GET /api/problems` — Paginated list of problems with difficulty, tag, and search filters.
+* `GET /api/problems/:slug` — Retrieve full problem statement, metadata, and sample testcases.
+* `POST /api/problems` *(Admin)* — Create a new problem with testcases.
+
+### Submissions & Judge (`/api/submissions`)
+* `POST /api/submissions` — Submit code for evaluation; returns HTTP 202 with job tracking ID.
+* `GET /api/submissions/:id` — Retrieve submission status, runtime, memory, and verdict telemetry.
+* `GET /api/submissions/problem/:problemId` — Retrieve personal submission history for a problem.
+
+### Contests (`/api/contests`)
+* `GET /api/contests` — List upcoming, ongoing, and past contests.
+* `GET /api/contests/:slug` — Contest details, rules, and problem catalog.
+* `POST /api/contests/:id/register` — Register current user for a contest.
+* `GET /api/contests/:slug/leaderboard` — Real-time contest standings computed with ICPC scoring.
+
+### Community (`/api/community`)
+* `GET /api/community/comments/:problemId` — Threaded discussion comments and replies.
+* `POST /api/community/comments` — Post a new comment or reply to an existing comment.
+* `POST /api/community/comments/:id/vote` — Upvote or downvote a comment.
+* `GET /api/community/solutions/:problemId` — Community-shared solutions with complexity tags.
+* `POST /api/community/solutions` — Publish a solution and approach explanation.
+* `POST /api/community/solutions/:id/vote` — Toggle upvote on a community solution.
+* `GET /api/community/editorial/:problemId` — Official editorial and progressive hints.
+
+### Users & Leaderboard (`/api/users`)
+* `GET /api/users/leaderboard` — Global leaderboard ranked by rating.
+* `GET /api/users/profile/:username` — Public user profile, solved distribution, and submission history.
+
+---
+
+## ⚙️ Environment Variables
+
+### Backend (`apps/api/.env`)
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `PORT` | API & WebSocket server port | `4000` |
+| `DATABASE_URL` | Prisma connection string (SQLite / PostgreSQL) | `file:./dev.db` |
+| `REDIS_URL` | Redis server connection URI for BullMQ | `redis://localhost:6379` |
+| `JWT_ACCESS_SECRET` | Secret key for signing short-lived access tokens | *required* |
+| `JWT_REFRESH_SECRET` | Secret key for signing refresh tokens | *required* |
+| `FRONTEND_URL` | Allowed CORS origin | `http://localhost:3000` |
+| `JUDGE_CONCURRENCY` | Maximum concurrent sandbox execution slots | `4` |
+
+### Frontend (`apps/web/.env.local`)
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `NEXT_PUBLIC_API_URL` | Backend REST API endpoint | `http://localhost:4000/api` |
+| `NEXT_PUBLIC_SOCKET_URL` | Socket.IO WebSocket gateway | `http://localhost:4000` |
 
 ---
 
 ## 📄 License
 
-This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
