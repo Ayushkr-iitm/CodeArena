@@ -23,12 +23,13 @@ userRouter.get("/profile/:username", async (req, res, next) => {
 
     if (!user) throw new AppError("User not found", 404);
 
-    // Get all accepted submissions to calculate unique problems solved
+    // Get all submissions to calculate stats
     const submissions = await prisma.submission.findMany({
       where: { userId: user.id },
       select: {
         verdict: true,
         problemId: true,
+        language: true,
         problem: { select: { difficulty: true } },
       },
     });
@@ -36,8 +37,8 @@ userRouter.get("/profile/:username", async (req, res, next) => {
     const totalSubmissions = submissions.length;
     const accepted = submissions.filter((s) => s.verdict === "ACCEPTED");
 
-    // Count UNIQUE problems solved (not duplicate AC submissions)
-    const solvedProblems = new Map<string, string>(); // problemId -> difficulty
+    // Count UNIQUE problems solved
+    const solvedProblems = new Map<string, string>();
     for (const s of accepted) {
       if (!solvedProblems.has(s.problemId)) {
         solvedProblems.set(s.problemId, s.problem.difficulty);
@@ -45,6 +46,36 @@ userRouter.get("/profile/:username", async (req, res, next) => {
     }
 
     const difficulties = Array.from(solvedProblems.values());
+
+    // Language usage breakdown
+    const languageStats: Record<string, number> = { CPP: 0, PYTHON: 0, JAVA: 0 };
+    for (const s of submissions) {
+      if (s.language && languageStats[s.language] !== undefined) {
+        languageStats[s.language]++;
+      }
+    }
+
+    // 10 most recent submissions
+    const recentSubmissions = await prisma.submission.findMany({
+      where: { userId: user.id },
+      orderBy: { createdAt: "desc" },
+      take: 10,
+      select: {
+        id: true,
+        language: true,
+        verdict: true,
+        runtime: true,
+        memory: true,
+        createdAt: true,
+        problem: {
+          select: {
+            title: true,
+            slug: true,
+            difficulty: true,
+          },
+        },
+      },
+    });
 
     const stats = {
       totalSolved: solvedProblems.size,
@@ -56,6 +87,8 @@ userRouter.get("/profile/:username", async (req, res, next) => {
         totalSubmissions > 0
           ? Math.round((accepted.length / totalSubmissions) * 100)
           : 0,
+      languageStats,
+      recentSubmissions,
     };
 
     res.json({ success: true, data: { user, stats } });
@@ -88,10 +121,32 @@ userRouter.get("/leaderboard", async (req, res, next) => {
       prisma.user.count(),
     ]);
 
-    // Add rank based on position
+    const userIds = users.map((u) => u.id);
+    const acceptedSubs = await prisma.submission.findMany({
+      where: {
+        userId: { in: userIds },
+        verdict: "ACCEPTED",
+      },
+      select: {
+        userId: true,
+        problemId: true,
+      },
+    });
+
+    // Map distinct solved problems per user
+    const solvedMap: Record<string, Set<string>> = {};
+    for (const sub of acceptedSubs) {
+      if (!solvedMap[sub.userId]) {
+        solvedMap[sub.userId] = new Set();
+      }
+      solvedMap[sub.userId].add(sub.problemId);
+    }
+
+    // Add rank and totalSolved based on position
     const rankedUsers = users.map((u, i) => ({
       ...u,
       rank: (page - 1) * pageSize + i + 1,
+      totalSolved: solvedMap[u.id]?.size || 0,
     }));
 
     res.json({
