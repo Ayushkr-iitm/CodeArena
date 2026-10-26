@@ -14,6 +14,9 @@ import {
   Copy, 
   Check, 
   AlertCircle,
+  CheckCircle2,
+  XCircle,
+  Award,
   Settings2,
   Type,
   SunMoon
@@ -95,7 +98,38 @@ export default function ProblemDetailPage({ params }: { params: { slug: string }
   const [timerRunning, setTimerRunning] = useState(true)
   const [consoleTab, setConsoleTab] = useState<'testcase' | 'result'>('testcase')
   const [isRunning, setIsRunning] = useState(false)
-  const [testResult, setTestResult] = useState<{ status: string; runtime: string; memory: string; output: string } | null>(null)
+  const [testResult, setTestResult] = useState<{
+    status: string
+    runtime: string
+    memory: string
+    output: string
+    error?: string
+    isSuccess?: boolean
+    ratingBonus?: number
+  } | null>(null)
+
+  // Submissions State
+  const [submissions, setSubmissions] = useState<any[]>([])
+  const [loadingSubmissions, setLoadingSubmissions] = useState(false)
+
+  const loadSubmissions = useCallback(async () => {
+    if (!isAuthenticated) return
+    setLoadingSubmissions(true)
+    try {
+      const data = await api.getProblemSubmissions(params.slug)
+      setSubmissions(data || [])
+    } catch (err) {
+      console.error('Failed to load submissions:', err)
+    } finally {
+      setLoadingSubmissions(false)
+    }
+  }, [isAuthenticated, params.slug])
+
+  useEffect(() => {
+    if (activeTab === 'submissions') {
+      loadSubmissions()
+    }
+  }, [activeTab, loadSubmissions])
 
   // Draft key generator
   const getDraftKey = useCallback((lang: SupportedLanguage) => {
@@ -177,23 +211,54 @@ export default function ProblemDetailPage({ params }: { params: { slug: string }
     setTimeout(() => setCopiedIndex(null), 2000)
   }
 
-  // Simulated code run against sample testcase
-  const handleRunCode = () => {
+  // Real code run against sample testcase in sandbox
+  const handleRunCode = async () => {
+    if (!problem) return
     setIsRunning(true)
     setConsoleTab('result')
-    setTimeout(() => {
-      setIsRunning(false)
-      const expected = problem?.sampleTestCases?.[activeTestCase]?.expectedOutput || problem?.sampleOutput || '0 1'
-      setTestResult({
-        status: 'Accepted (Sample Evaluation Passed)',
-        runtime: '14 ms',
-        memory: '10.8 MB',
-        output: expected
+    try {
+      const currentInput = sampleCases[activeTestCase]?.input || problem.sampleInput || ''
+      const currentExpected = sampleCases[activeTestCase]?.expectedOutput || problem.sampleOutput || ''
+      const res = await api.runCode({
+        language,
+        code: userCode,
+        stdin: currentInput,
+        problemId: problem.id,
+        expectedOutput: currentExpected,
       })
-    }, 700)
+      const data = res.data
+      const isAccepted = data.verdict === 'ACCEPTED'
+      setTestResult({
+        status: isAccepted
+          ? 'Accepted (Sample Evaluation Passed)'
+          : data.verdict === 'WRONG_ANSWER'
+          ? 'Wrong Answer (Output Mismatch)'
+          : data.verdict === 'TIME_LIMIT_EXCEEDED'
+          ? 'Time Limit Exceeded'
+          : data.verdict === 'COMPILATION_ERROR'
+          ? 'Compilation Error'
+          : 'Runtime Error',
+        runtime: `${data.executionTimeMs} ms`,
+        memory: `${(data.memoryUsedKb / 1024).toFixed(1)} MB`,
+        output: data.stdout || '(No standard output)',
+        error: data.compileOutput || data.diffSummary || data.stderr || undefined,
+        isSuccess: isAccepted,
+      })
+    } catch (err: any) {
+      setTestResult({
+        status: 'Execution Error',
+        runtime: '0 ms',
+        memory: '0 MB',
+        output: '',
+        error: err.message || 'Execution error in sandbox engine',
+        isSuccess: false,
+      })
+    } finally {
+      setIsRunning(false)
+    }
   }
 
-  // Submit code to backend API
+  // Submit code to backend Online Judge
   const handleSubmitCode = async () => {
     if (!isAuthenticated) {
       alert('Please sign in to submit your solution to the online judge!')
@@ -205,19 +270,42 @@ export default function ProblemDetailPage({ params }: { params: { slug: string }
     setIsRunning(true)
     setConsoleTab('result')
     try {
-      await api.submitCode(problem.id, userCode, language)
-      setTimeout(() => {
-        setIsRunning(false)
-        setTestResult({
-          status: 'Accepted (All Test Cases Passed)',
-          runtime: '18 ms',
-          memory: '11.2 MB',
-          output: problem.sampleOutput || 'Passed'
-        })
-      }, 900)
+      const res = await api.submitCode(problem.id, userCode, language)
+      const { submission, evaluation, ratingBonus } = res.data
+      const isAccepted = evaluation.verdict === 'ACCEPTED'
+
+      let statusText = isAccepted 
+        ? `Accepted (${evaluation.testCasesPassed}/${evaluation.totalTestCases} Test Cases Passed)`
+        : `${evaluation.verdict.replace(/_/g, ' ')} (${evaluation.testCasesPassed}/${evaluation.totalTestCases} Passed)`
+
+      if (ratingBonus && ratingBonus > 0) {
+        statusText += ` — 🎉 +${ratingBonus} Rating Bonus!`
+      }
+
+      setTestResult({
+        status: statusText,
+        runtime: `${evaluation.maxRuntimeMs} ms`,
+        memory: `${(evaluation.peakMemoryKb / 1024).toFixed(1)} MB`,
+        output: isAccepted 
+          ? 'All evaluation test cases passed successfully.' 
+          : (evaluation.testCaseResults.find((tc: any) => tc.error)?.error || 'Evaluation failed on hidden test cases.'),
+        error: evaluation.compileOutput,
+        isSuccess: isAccepted,
+        ratingBonus,
+      })
+
+      loadSubmissions()
     } catch (err: any) {
+      setTestResult({
+        status: 'Submission Failed',
+        runtime: '0 ms',
+        memory: '0 MB',
+        output: '',
+        error: err.message || 'Judge evaluation failed',
+        isSuccess: false,
+      })
+    } finally {
       setIsRunning(false)
-      alert(err.message || 'Failed to submit code')
     }
   }
 
@@ -466,14 +554,94 @@ export default function ProblemDetailPage({ params }: { params: { slug: string }
             )}
 
             {activeTab === 'submissions' && (
-              <div className="text-center py-16 text-zinc-500 space-y-2">
-                <History className="w-8 h-8 mx-auto text-zinc-600" />
-                <p className="text-sm font-semibold text-zinc-300">Submission History</p>
-                <p className="text-xs">
-                  {isAuthenticated 
-                    ? `You have solved this challenge or submitted code under account ${user?.username}.`
-                    : 'Please sign in to view your submission history for this problem.'}
-                </p>
+              <div className="space-y-4">
+                {!isAuthenticated ? (
+                  <div className="text-center py-16 text-zinc-500 space-y-2">
+                    <History className="w-8 h-8 mx-auto text-zinc-600" />
+                    <p className="text-sm font-semibold text-zinc-300">Sign in to track progress</p>
+                    <p className="text-xs">
+                      Log in to your CodeArena account to view your live execution history and performance telemetry.
+                    </p>
+                    <Link
+                      href="/login"
+                      className="inline-block mt-3 px-4 py-1.5 rounded-lg bg-brand-600 text-white text-xs font-semibold hover:bg-brand-500 transition-colors"
+                    >
+                      Sign In
+                    </Link>
+                  </div>
+                ) : loadingSubmissions ? (
+                  <div className="flex flex-col items-center justify-center py-12 space-y-2">
+                    <div className="w-6 h-6 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
+                    <span className="text-xs font-mono text-zinc-400">Loading submission records...</span>
+                  </div>
+                ) : submissions.length === 0 ? (
+                  <div className="text-center py-16 text-zinc-500 space-y-2">
+                    <History className="w-8 h-8 mx-auto text-zinc-600" />
+                    <p className="text-sm font-semibold text-zinc-300">No submissions yet</p>
+                    <p className="text-xs">Write your solution in the editor and click &quot;Submit Solution&quot; to test your code against the judge.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs text-zinc-400 font-mono px-2">
+                      <span>Recent Submissions ({submissions.length})</span>
+                      <button
+                        onClick={loadSubmissions}
+                        className="hover:text-white transition-colors"
+                      >
+                        Refresh
+                      </button>
+                    </div>
+
+                    <div className="space-y-2">
+                      {submissions.map((sub) => {
+                        const isAcc = sub.verdict === 'ACCEPTED'
+                        return (
+                          <div
+                            key={sub.id}
+                            className={`p-3 rounded-xl border text-xs font-mono transition-colors ${
+                              isAcc
+                                ? 'bg-emerald-500/5 border-emerald-500/20'
+                                : 'bg-rose-500/5 border-rose-500/20'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span
+                                className={`font-bold flex items-center gap-1.5 ${
+                                  isAcc ? 'text-emerald-400' : 'text-rose-400'
+                                }`}
+                              >
+                                {isAcc ? (
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                ) : (
+                                  <XCircle className="w-3.5 h-3.5" />
+                                )}
+                                {sub.verdict.replace(/_/g, ' ')}
+                              </span>
+                              <span className="text-zinc-500 text-[11px]">
+                                {new Date(sub.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-3 mt-2 text-[11px] text-zinc-400">
+                              <span className="px-1.5 py-0.5 rounded bg-white/[0.06] text-zinc-300 font-medium">
+                                {sub.language}
+                              </span>
+                              <span>Passed: {sub.testCasesPassed}/{sub.totalTestCases}</span>
+                              {sub.runtime !== null && <span>Runtime: {sub.runtime} ms</span>}
+                              {sub.memory !== null && <span>Memory: {(sub.memory / 1024).toFixed(1)} MB</span>}
+                            </div>
+
+                            {sub.errorMessage && !isAcc && (
+                              <div className="mt-2 text-[10px] text-rose-300 bg-black/40 p-1.5 rounded truncate">
+                                {sub.errorMessage}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -581,15 +749,19 @@ export default function ProblemDetailPage({ params }: { params: { slug: string }
               </div>
 
               {testResult && (
-                <div className="flex items-center gap-2 font-mono text-[11px] text-emerald-400">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                  <span>{testResult.status}</span>
+                <div className={`flex items-center gap-1.5 font-mono text-[11px] ${
+                  testResult.isSuccess ? 'text-emerald-400' : 'text-rose-400'
+                }`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${
+                    testResult.isSuccess ? 'bg-emerald-400' : 'bg-rose-400'
+                  }`} />
+                  <span className="truncate max-w-[200px]">{testResult.status}</span>
                 </div>
               )}
             </div>
 
             {/* Console Drawer Body */}
-            <div className="p-4 max-h-36 overflow-y-auto font-mono text-xs text-zinc-300">
+            <div className="p-4 max-h-52 overflow-y-auto font-mono text-xs text-zinc-300">
               {consoleTab === 'testcase' && (
                 <div className="space-y-3">
                   <div className="flex gap-2">
@@ -617,25 +789,48 @@ export default function ProblemDetailPage({ params }: { params: { slug: string }
               {consoleTab === 'result' && (
                 <div>
                   {isRunning ? (
-                    <div className="flex items-center gap-2 text-brand-300 py-2">
-                      <div className="w-3.5 h-3.5 border-2 border-brand-400 border-t-transparent rounded-full animate-spin" />
-                      <span>Compiling and judging in isolated sandbox...</span>
+                    <div className="flex items-center gap-2.5 text-brand-300 py-3">
+                      <div className="w-4 h-4 border-2 border-brand-400 border-t-transparent rounded-full animate-spin" />
+                      <span>Executing in sandbox environment...</span>
                     </div>
                   ) : testResult ? (
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-3">
-                        <span className="font-bold text-emerald-400 text-sm">{testResult.status}</span>
-                        <span className="text-zinc-400">Time: {testResult.runtime}</span>
-                        <span className="text-zinc-400">Memory: {testResult.memory}</span>
+                    <div className="space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-white/[0.06]">
+                        <div className="flex items-center gap-2">
+                          {testResult.isSuccess ? (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                          ) : (
+                            <XCircle className="w-4 h-4 text-rose-400" />
+                          )}
+                          <span className={`font-bold text-sm ${testResult.isSuccess ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            {testResult.status}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3 text-xs text-zinc-400">
+                          <span>Runtime: <strong className="text-zinc-200">{testResult.runtime}</strong></span>
+                          <span>Memory: <strong className="text-zinc-200">{testResult.memory}</strong></span>
+                        </div>
                       </div>
-                      <div className="p-2 rounded bg-[#0A0E17] border border-white/[0.06]">
-                        <span className="text-zinc-500 block text-[10px]">Stdout:</span>
-                        <pre className="text-zinc-200">{testResult.output}</pre>
-                      </div>
+
+                      {testResult.error && (
+                        <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-300 space-y-1">
+                          <span className="text-[10px] uppercase font-bold tracking-wider text-rose-400 block">
+                            Diagnostics & Feedback:
+                          </span>
+                          <pre className="text-xs whitespace-pre-wrap font-mono">{testResult.error}</pre>
+                        </div>
+                      )}
+
+                      {testResult.output && (
+                        <div className="p-2.5 rounded-lg bg-[#080B12] border border-white/[0.06] space-y-1">
+                          <span className="text-zinc-500 block text-[10px] uppercase tracking-wider font-semibold">Standard Output:</span>
+                          <pre className="text-zinc-200 whitespace-pre-wrap font-mono">{testResult.output}</pre>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="text-zinc-500 py-2">
-                      Click &quot;Run&quot; or press <kbd className="px-1 py-0.5 rounded bg-white/[0.08] text-zinc-300">Ctrl+Enter</kbd> to test with sample inputs, or &quot;Submit&quot; to evaluate.
+                      Click &quot;Run&quot; or press <kbd className="px-1 py-0.5 rounded bg-white/[0.08] text-zinc-300">Ctrl+Enter</kbd> to test with sample inputs, or &quot;Submit&quot; to evaluate against the complete test suite.
                     </div>
                   )}
                 </div>

@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  sandbox-cpp:
+    build:
+      context: ./sandbox/cpp
+      dockerfile: Dockerfile
+    image: codearena-sandbox-cpp:latest
+    network_mode: none
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 256M
+
+  sandbox-python:
+    build:
+      context: ./sandbox/python
+      dockerfile: Dockerfile
+    image: codearena-sandbox-python:latest
+    network_mode: none
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 256M
+
+  sandbox-java:
+    build:
+      context: ./sandbox/java
+      dockerfile: Dockerfile
+    image: codearena-sandbox-java:latest
+    network_mode: none
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 256M

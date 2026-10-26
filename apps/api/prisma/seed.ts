@@ -138,7 +138,7 @@ You can return the answer in any order.`,
             order: 4,
           },
           {
-            input: "4 -1\n-3 4 3 90",
+            input: "4 0\n-3 4 3 90",
             expectedOutput: "0 2",
             isSample: false,
             order: 5,

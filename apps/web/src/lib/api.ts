@@ -121,6 +121,18 @@ export const api = {
     }),
 
   // Submissions
+  runCode: (data: {
+    language: string
+    code: string
+    stdin?: string
+    problemId?: string
+    expectedOutput?: string
+  }) =>
+    apiFetch<any>('/submissions/run', {
+      method: 'POST',
+      data,
+    }),
+
   submitCode: (problemId: string, code: string, language: string) =>
     apiFetch<any>('/submissions', {
       method: 'POST',
@@ -131,6 +143,9 @@ export const api = {
     const query = problemId ? `?problemId=${problemId}` : ''
     return apiFetch<any>(`/submissions${query}`)
   },
+
+  getProblemSubmissions: (slug: string) =>
+    apiFetch<any>(`/submissions/problem/${slug}`),
 
   // Users & Leaderboard
   getProfile: (username: string) => apiFetch<any>(`/users/profile/${username}`),
