@@ -29,16 +29,33 @@ jobs:
       - name: Install Monorepo Dependencies
         run: npm ci
 
+      - name: Setup Environment Files
+        run: |
+          cp apps/api/.env.example apps/api/.env
+
       - name: Generate Prisma ORM Client
         run: npm run db:generate
 
-      - name: Compile Backend TypeScript
+      - name: Initialize Database Schema & Seed
+        run: |
+          npm run db:push
+          npm run db:seed --workspace=apps/api
+        env:
+          DATABASE_URL: "file:./dev.db"
+
+      - name: Build Backend TypeScript
         run: npm run build:api
+
+      - name: Build Next.js Frontend
+        run: npm run build:web
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:4000/api
+          NEXT_PUBLIC_SOCKET_URL: http://localhost:4000
 
       - name: Run Automated Test Suites (Unit, Integration, E2E)
         run: npm test
         env:
           NODE_ENV: test
-          JWT_ACCESS_SECRET: ci-test-secret-access
-          JWT_REFRESH_SECRET: ci-test-secret-refresh
-          DATABASE_URL: file:./prisma/test.db
+          JWT_ACCESS_SECRET: your-super-secret-access-key
+          JWT_REFRESH_SECRET: your-super-secret-refresh-key
+          DATABASE_URL: "file:./dev.db"
