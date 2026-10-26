@@ -1,0 +1,44 @@
+name: CodeArena CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-and-build:
+    name: Build & Test Suite
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: 'npm'
+
+      - name: Install System Compilers & Interpreters
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++ python3
+
+      - name: Install Monorepo Dependencies
+        run: npm ci
+
+      - name: Generate Prisma ORM Client
+        run: npm run db:generate
+
+      - name: Compile Backend TypeScript
+        run: npm run build:api
+
+      - name: Run Automated Test Suites (Unit, Integration, E2E)
+        run: npm test
+        env:
+          NODE_ENV: test
+          JWT_ACCESS_SECRET: ci-test-secret-access
+          JWT_REFRESH_SECRET: ci-test-secret-refresh
+          DATABASE_URL: file:./prisma/test.db

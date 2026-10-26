@@ -1,0 +1,101 @@
+version: "3.8"
+
+services:
+  # ============================================
+  # POSTGRESQL DATABASE
+  # ============================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: codearena_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: codearena
+      POSTGRES_PASSWORD: codearena_password
+      POSTGRES_DB: codearena
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U codearena -d codearena"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - codearena_net
+
+  # ============================================
+  # REDIS ASYNCHRONOUS BROKER
+  # ============================================
+  redis:
+    image: redis:7-alpine
+    container_name: codearena_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - codearena_net
+
+  # ============================================
+  # CODEARENA API & JUDGE WORKER ENGINE
+  # ============================================
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: codearena_api
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    environment:
+      PORT: 4000
+      NODE_ENV: production
+      DATABASE_URL: postgresql://codearena:codearena_password@postgres:5432/codearena?schema=public
+      REDIS_URL: redis://redis:6379
+      JWT_ACCESS_SECRET: codearena_production_jwt_access_secret_32chars
+      JWT_REFRESH_SECRET: codearena_production_jwt_refresh_secret_32chars
+      FRONTEND_URL: http://localhost:3000
+      SANDBOX_DRIVER: local
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - codearena_net
+
+  # ============================================
+  # CODEARENA NEXT.JS WEB FRONTEND
+  # ============================================
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    container_name: codearena_web
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      NEXT_PUBLIC_API_URL: http://localhost:4000/api
+      NEXT_PUBLIC_SOCKET_URL: http://localhost:4000
+    depends_on:
+      - api
+    networks:
+      - codearena_net
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  codearena_net:
+    driver: bridge
