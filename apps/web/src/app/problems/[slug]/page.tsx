@@ -226,7 +226,7 @@ export default function ProblemDetailPage({ params }: { params: { slug: string }
         problemId: problem.id,
         expectedOutput: currentExpected,
       })
-      const data = res.data
+      const data = res?.data || res
       const isAccepted = data.verdict === 'ACCEPTED'
       setTestResult({
         status: isAccepted
@@ -271,7 +271,8 @@ export default function ProblemDetailPage({ params }: { params: { slug: string }
     setConsoleTab('result')
     try {
       const res = await api.submitCode(problem.id, userCode, language)
-      const { submission, evaluation, ratingBonus } = res.data
+      const data = res?.data || res
+      const { submission, evaluation, ratingBonus } = data
       const isAccepted = evaluation.verdict === 'ACCEPTED'
 
       let statusText = isAccepted 
