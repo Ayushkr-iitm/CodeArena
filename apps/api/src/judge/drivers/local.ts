@@ -5,6 +5,7 @@ import crypto from "crypto";
 import { ExecutionRequest, ExecutionResult, ISandboxDriver } from "../types";
 import { compileSource } from "../compiler";
 import { runProcess } from "../runner";
+import { validateSubmissionSecurity } from "../security";
 
 export class LocalProcessDriver implements ISandboxDriver {
   readonly name = "local_process";
@@ -21,6 +22,20 @@ export class LocalProcessDriver implements ISandboxDriver {
       timeLimitMs = 2000,
       memoryLimitMb = 256,
     } = request;
+
+    // 0. Static security check
+    const secCheck = validateSubmissionSecurity(language, code);
+    if (!secCheck.isSafe) {
+      return {
+        verdict: "RUNTIME_ERROR",
+        stdout: "",
+        stderr: `[Security Violation] ${secCheck.reason}`,
+        executionTimeMs: 0,
+        memoryUsedKb: 0,
+        exitCode: 1,
+        error: secCheck.reason,
+      };
+    }
 
     // Create unique ephemeral directory for isolation
     const runId = crypto.randomUUID();

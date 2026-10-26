@@ -9,6 +9,13 @@ import dotenv from "dotenv";
 dotenv.config();
 
 import { errorHandler } from "./middleware/errorHandler";
+import {
+  generalLimiter,
+  authLimiter,
+  submissionLimiter,
+  communityLimiter,
+} from "./middleware/rate-limiter";
+
 import { authRouter } from "./routes/auth.routes";
 import { problemRouter } from "./routes/problem.routes";
 import { submissionRouter } from "./routes/submission.routes";
@@ -19,11 +26,16 @@ import { communityRouter } from "./routes/community.routes";
 export const app = express();
 
 // ============================================
-// MIDDLEWARE
+// MIDDLEWARE & SECURITY HEADERS
 // ============================================
 
-// Security headers
-app.use(helmet());
+// Security headers with Helmet
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+    contentSecurityPolicy: false, // Handled per-view or on Next.js frontend
+  })
+);
 
 // CORS — allow frontend to make requests
 app.use(
@@ -43,6 +55,16 @@ app.use(cookieParser());
 if (process.env.NODE_ENV !== "test") {
   app.use(morgan("dev"));
 }
+
+// Global API rate limiting
+app.use("/api", generalLimiter);
+
+// Specific rate limiting for sensitive endpoints
+app.use("/api/auth/login", authLimiter);
+app.use("/api/auth/register", authLimiter);
+app.use("/api/submissions", submissionLimiter);
+app.use("/api/community/comments", communityLimiter);
+app.use("/api/community/solutions", communityLimiter);
 
 // ============================================
 // ROUTES

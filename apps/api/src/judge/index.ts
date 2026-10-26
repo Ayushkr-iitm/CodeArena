@@ -6,6 +6,7 @@ export * from "./types";
 export * from "./checker";
 export * from "./compiler";
 export * from "./runner";
+export * from "./security";
 
 /**
  * Executes user code in an isolated sandbox and returns the stdout, stderr,
